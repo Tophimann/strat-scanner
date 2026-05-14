@@ -544,6 +544,30 @@ def scan():
     if scan_date_str != today_str:
         print(f"  Scan date      : {scan_date_str} (last completed trading day)")
 
+    def _pin_to_scan_date(df):
+        """Ensure eval_tf / build_entry / build_3bar_combo see scan_date as the
+        last bar.  All three functions do df.iloc[:-1] to strip 'incomplete' bars.
+        If scan_date IS the last bar (it's complete — we ran after close), that
+        strip would hide today's real candle.  Fix: append a sentinel row so
+        iloc[:-1] strips the sentinel instead, leaving scan_date as last real bar.
+        Monthly/weekly frames are NOT passed here (they're genuinely in-progress).
+        """
+        if df is None or df.empty:
+            return df
+        try:
+            last_idx = df.index[-1]
+            last_d = last_idx.date() if hasattr(last_idx, 'date') else pd.Timestamp(last_idx).date()
+            if last_d == scan_date:
+                # Last bar == scan_date (complete). Add a sentinel so iloc[:-1]
+                # strips it rather than the real scan_date bar.
+                sentinel_ts = last_idx + pd.Timedelta(days=1)
+                sentinel = df.iloc[-1:].copy()
+                sentinel.index = pd.DatetimeIndex([sentinel_ts])
+                return pd.concat([df, sentinel])
+        except Exception:
+            pass
+        return df
+
     # ── Chain evaluation ──────────────────────────────────────────────────
     all_setups = []
     errors     = []
@@ -553,8 +577,8 @@ def scan():
         try:
             df_m  = get_sym_df(raw_m, yf_sym, n)
             df_w  = get_sym_df(raw_w, yf_sym, n)
-            df_d  = raw_d.get(yf_sym)
-            df_1h = raw_1h.get(yf_sym)
+            df_d  = _pin_to_scan_date(raw_d.get(yf_sym))   # pin daily to scan_date
+            df_1h = _pin_to_scan_date(raw_1h.get(yf_sym))  # pin 1H to scan_date
 
             rows = evaluate_chain(yf_sym, tv_sym, scan_date_str,
                                   df_m, df_w, df_d, df_1h)
