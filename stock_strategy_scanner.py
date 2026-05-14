@@ -296,26 +296,21 @@ def evaluate_chain(yf_sym, tv_sym, today_str,
     coiling_tfs = []   # accumulate coiling levels as we drill down
 
     # ── MONTHLY gate ──────────────────────────────────────────────────────
+    # FTC rule: last CLOSED monthly bar must be 2u or 3. Period.
+    # Inside bars (1) and bearish bars (2d) always fail — no coiling exception.
     m_state, m_bar, m_combo, df_m_clean = eval_tf(df_m)
 
-    # Must be bullish or coiling to proceed
-    if m_bar not in BULLISH_BARS and m_state != 'coiling':
+    if m_bar not in BULLISH_BARS:
         return []
-    if m_state == 'coiling':
-        coiling_tfs.append('monthly')
-    ftc_m_type = m_combo if m_state == 'coiling' else m_bar
+    ftc_m_type = m_bar
 
     # ── WEEKLY ────────────────────────────────────────────────────────────
+    # FTC rule: last CLOSED weekly bar must also be 2u or 3. No coiling exception.
     w_state, w_bar, w_combo, df_w_clean = eval_tf(df_w)
 
-    if w_bar not in BULLISH_BARS and w_state != 'coiling':
-        return []   # Weekly bearish — no setup
-
-    if w_state == 'coiling':
-        coiling_tfs.append('weekly')
-        ftc_w_type = w_combo
-    else:
-        ftc_w_type = w_bar
+    if w_bar not in BULLISH_BARS:
+        return []
+    ftc_w_type = w_bar
 
     # If weekly is a plain signal (non-coiling), enter here and STOP
     if w_state == 'signal':
@@ -513,11 +508,11 @@ def scan():
         df_w = get_sym_df(raw_w, yf_sym, n)
         if df_m is None or df_w is None:
             continue
-        m_state, m_bar, _, _ = eval_tf(df_m)
-        if m_bar not in BULLISH_BARS and m_state != 'coiling':
+        _, m_bar, _, _ = eval_tf(df_m)
+        if m_bar not in BULLISH_BARS:   # FTC: monthly must be 2u or 3
             continue
-        w_state, w_bar, _, _ = eval_tf(df_w)
-        if w_bar not in BULLISH_BARS and w_state != 'coiling':
+        _, w_bar, _, _ = eval_tf(df_w)
+        if w_bar not in BULLISH_BARS:   # FTC: weekly must be 2u or 3
             continue
         candidates.append(yf_sym)
 
