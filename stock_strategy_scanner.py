@@ -426,9 +426,46 @@ def evaluate_chain(yf_sym, tv_sym, today_str,
     return setups
 
 
+# ── Determine last completed trading day ──────────────────────────────────────
+def last_trading_day(df_daily=None) -> date:
+    """Return the date of the last CLOSED daily bar.
+
+    If the market is still open (last bar date == today), we step back one bar
+    so we never include an in-progress candle in the scan.
+    After market close the last bar is today and we use it directly.
+    """
+    from datetime import timezone
+    today = date.today()
+
+    if df_daily is not None and not df_daily.empty:
+        last_bar = df_daily.index[-1]
+        last_date = last_bar.date() if hasattr(last_bar, 'date') else last_bar.to_pydatetime().date()
+
+        if last_date < today:
+            # yfinance hasn't published today's bar yet — last close is last_date
+            return last_date
+        # last_date == today: bar is present but may be incomplete
+        # Check whether US market has already closed (20:00 UTC)
+        now_utc = datetime.now(timezone.utc)
+        market_close_utc = now_utc.replace(hour=20, minute=0, second=0, microsecond=0)
+        if now_utc >= market_close_utc:
+            return today          # bar is complete — use today
+        # Market still open — step back to previous bar
+        if len(df_daily) >= 2:
+            prev = df_daily.index[-2]
+            return prev.date() if hasattr(prev, 'date') else prev.to_pydatetime().date()
+
+    # Fallback: yesterday if weekday, Friday if Monday
+    from datetime import timedelta
+    d = today - timedelta(days=1)
+    while d.weekday() >= 5:   # skip Saturday (5) and Sunday (6)
+        d -= timedelta(days=1)
+    return d
+
+
 # ── Main Scanner ───────────────────────────────────────────────────────────────
 def scan():
-    today_str = date.today().strftime("%Y-%m-%d")
+    today_str = date.today().strftime("%Y-%m-%d")   # run-date for filenames
     out_file  = os.path.join(SCRIPT_DIR, f"stock_strategy_log_{today_str}.csv")
 
     with open(SYMBOLS_FILE) as f:
@@ -488,6 +525,13 @@ def scan():
             raw_d[yf_sym]  = get_sym_df(dl_d,  yf_sym, nc)
             raw_1h[yf_sym] = get_sym_df(dl_1h, yf_sym, nc)
 
+    # Determine scan date from actual data (last completed trading day)
+    _ref_df = next((raw_d[s] for s in candidates if raw_d.get(s) is not None), None)
+    scan_date = last_trading_day(_ref_df)
+    scan_date_str = scan_date.strftime("%Y-%m-%d")
+    if scan_date_str != today_str:
+        print(f"  Scan date      : {scan_date_str} (last completed trading day)")
+
     # ── Chain evaluation ──────────────────────────────────────────────────
     all_setups = []
     errors     = []
@@ -500,7 +544,7 @@ def scan():
             df_d  = raw_d.get(yf_sym)
             df_1h = raw_1h.get(yf_sym)
 
-            rows = evaluate_chain(yf_sym, tv_sym, today_str,
+            rows = evaluate_chain(yf_sym, tv_sym, scan_date_str,
                                   df_m, df_w, df_d, df_1h)
             all_setups.extend(rows)
         except Exception as e:
@@ -529,8 +573,8 @@ def scan():
         print("[DB] Skipped — db_writer not available (psycopg2/dotenv missing?)")
     elif all_setups:
         try:
-            n = _db_upsert_scans(all_setups)
-            print(f"[DB] {n} scan rows upserted to Postgres")
+            n = _db_upsert_scans(all_setups, scan_date=scan_date)
+            print(f"[DB] {n} scan rows upserted to Postgres (date: {scan_date_str})")
         except Exception as _db_err:
             print(f"[DB] Warning: could not write to Postgres: {_db_err}")
 
