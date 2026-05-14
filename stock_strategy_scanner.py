@@ -295,44 +295,30 @@ def evaluate_chain(yf_sym, tv_sym, today_str,
     setups = []
     coiling_tfs = []   # accumulate coiling levels as we drill down
 
-    # ── MONTHLY gate ──────────────────────────────────────────────────────
-    # FTC rule: last CLOSED monthly bar must be 2u or 3. Period.
-    # Inside bars (1) and bearish bars (2d) always fail — no coiling exception.
-    m_state, m_bar, m_combo, df_m_clean = eval_tf(df_m)
-
+    # ── MONTHLY FTC gate ──────────────────────────────────────────────────
+    # Last CLOSED monthly bar must be 2u or 3. No exceptions.
+    _, m_bar, _, _ = eval_tf(df_m)
     if m_bar not in BULLISH_BARS:
         return []
     ftc_m_type = m_bar
 
-    # ── WEEKLY ────────────────────────────────────────────────────────────
-    # FTC rule: last CLOSED weekly bar must also be 2u or 3. No coiling exception.
-    w_state, w_bar, w_combo, df_w_clean = eval_tf(df_w)
-
+    # ── WEEKLY FTC gate ───────────────────────────────────────────────────
+    # Last CLOSED weekly bar must be 2u or 3. No exceptions.
+    # Weekly is a GATE only — we always drill to daily for the actual entry.
+    _, w_bar, _, _ = eval_tf(df_w)
     if w_bar not in BULLISH_BARS:
         return []
     ftc_w_type = w_bar
 
-    # If weekly is a plain signal (non-coiling), enter here and STOP
-    if w_state == 'signal':
-        w3_combo = build_3bar_combo(df_w)
-        if w3_combo and w3_combo == "2u-2u-2u":
-            return []
-        row = build_entry(yf_sym, tv_sym, today_str, df_w,
-                          'weekly', ftc_m_type, ftc_w_type,
-                          list(coiling_tfs), w3_combo)
-        if row:
-            setups.append(row)
-        return setups   # STOP drilling if weekly gave a plain signal
-
-    # Weekly is coiling → drill to DAILY
+    # ── DAILY — the entry timeframe ───────────────────────────────────────
+    # Both FTC gates passed. Now find the daily signal.
     if df_d is None or df_d.empty:
         return setups
 
     d_state, d_bar, d_combo, df_d_clean = eval_tf(df_d)
 
+    # Daily must be bullish or coiling — reject 2d and standalone bearish 1
     if d_bar not in BULLISH_BARS and d_state != 'coiling':
-        # Daily is bearish or None — skip drill but weekly coil is noted
-        # (no LTF entry possible)
         return setups
 
     if d_state == 'coiling':
