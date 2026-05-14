@@ -430,11 +430,14 @@ def evaluate_chain(yf_sym, tv_sym, today_str,
 def last_trading_day(df_daily=None) -> date:
     """Return the date of the last CLOSED daily bar.
 
-    If the market is still open (last bar date == today), we step back one bar
-    so we never include an in-progress candle in the scan.
-    After market close the last bar is today and we use it directly.
+    Strategy:
+    - If last bar date < today: use it (yfinance hasn't published today yet)
+    - If last bar date == today AND after 20:30 UTC AND bar has real volume: use today
+    - Otherwise step back to the previous bar (market still open or pre-market stub)
+    Using 20:30 UTC (4:30pm ET) adds a 30-min buffer after the official 20:00 close
+    to ensure yfinance has finished publishing the final bar.
     """
-    from datetime import timezone
+    from datetime import timezone, timedelta
     today = date.today()
 
     if df_daily is not None and not df_daily.empty:
@@ -444,20 +447,29 @@ def last_trading_day(df_daily=None) -> date:
         if last_date < today:
             # yfinance hasn't published today's bar yet — last close is last_date
             return last_date
-        # last_date == today: bar is present but may be incomplete
-        # Check whether US market has already closed (20:00 UTC)
+
+        # last_date == today: check if the bar is genuinely complete
         now_utc = datetime.now(timezone.utc)
-        market_close_utc = now_utc.replace(hour=20, minute=0, second=0, microsecond=0)
-        if now_utc >= market_close_utc:
-            return today          # bar is complete — use today
-        # Market still open — step back to previous bar
+        market_close_utc = now_utc.replace(hour=20, minute=30, second=0, microsecond=0)
+
+        # Also require that today's bar has meaningful volume (not a pre-market stub)
+        try:
+            vol_col = [c for c in df_daily.columns if 'volume' in str(c).lower() or c == 'Volume']
+            today_volume = int(df_daily.iloc[-1][vol_col[0]]) if vol_col else 0
+        except Exception:
+            today_volume = 0
+
+        if now_utc >= market_close_utc and today_volume > 10_000:
+            return today          # bar is complete with real volume — use today
+
+        # Market still open, pre-market stub, or too early — step back to previous bar
         if len(df_daily) >= 2:
             prev = df_daily.index[-2]
             return prev.date() if hasattr(prev, 'date') else prev.to_pydatetime().date()
 
-    # Fallback: yesterday if weekday, Friday if Monday
+    # Fallback: most recent completed weekday
     from datetime import timedelta
-    d = today - timedelta(days=1)
+    d = date.today() - timedelta(days=1)
     while d.weekday() >= 5:   # skip Saturday (5) and Sunday (6)
         d -= timedelta(days=1)
     return d
