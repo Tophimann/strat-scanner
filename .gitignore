@@ -1,0 +1,11 @@
+bot_logs/
+__pycache__/
+*.csv
+.env
+db_config.ini
+dashboard/
+claude-tradingview-mcp-trading/
+*.dkx
+*.log
+*.txt
+!requirements.txt
