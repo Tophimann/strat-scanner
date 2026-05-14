@@ -1,0 +1,28 @@
+name: EOD Scanner
+
+on:
+  schedule:
+    # 21:30 UTC = 22:30 CET (winter) / 23:30 CEST (summer) — always after US market close
+    - cron: '30 21 * * 1-5'
+  workflow_dispatch:   # manual trigger from GitHub UI
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run EOD Scanner
+        run: python stock_strategy_scanner.py
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}

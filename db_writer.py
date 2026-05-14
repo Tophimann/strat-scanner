@@ -9,7 +9,16 @@ import re
 from datetime import date, datetime
 from dotenv import load_dotenv
 
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "dashboard", ".env"))
+# Load DATABASE_URL: env var takes priority (GitHub Actions / Railway),
+# then .env in the script dir, then dashboard/.env for local dev.
+_script_dir = os.path.dirname(os.path.abspath(__file__))
+for _env_path in [
+    os.path.join(_script_dir, ".env"),
+    os.path.join(_script_dir, "dashboard", ".env"),
+]:
+    if os.path.exists(_env_path):
+        load_dotenv(dotenv_path=_env_path, override=False)
+        break
 
 try:
     import psycopg2
@@ -159,8 +168,8 @@ def upsert_trades(trades: list[dict]) -> int:
             # Upsert Trade
             cur.execute(
                 """INSERT INTO "Trade"
-                     (id, "scanResultId", "fillPrice", status, "openedAt", "createdAt", "updatedAt")
-                   VALUES (gen_random_uuid()::text, %s, %s, 'open', NOW(), NOW(), NOW())
+                     (id, "scanResultId", "fillPrice", status, "orderPlaced", "openedAt", "createdAt", "updatedAt")
+                   VALUES (gen_random_uuid()::text, %s, %s, 'open', false, NOW(), NOW(), NOW())
                    ON CONFLICT ("scanResultId") DO UPDATE SET
                      "fillPrice" = EXCLUDED."fillPrice",
                      "updatedAt" = NOW()
