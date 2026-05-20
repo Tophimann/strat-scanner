@@ -28,3 +28,4 @@ jobs:
         run: python stock_strategy_scanner.py
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          PYTHONPATH: src

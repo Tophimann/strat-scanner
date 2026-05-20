@@ -24,11 +24,18 @@ from key_levels import calculate_key_levels, get_targets, calc_rr, LEVEL_ORDER
 
 # ── 3-Bar Combo Patterns ──────────────────────────────────────────────────────
 # (bars[-2] type, bars[-1] type, setup name)
+#
+# "2-1-2" has TWO bullish variants:
+#   - 2U-1: prior bar was directional UP   → continuation setup
+#   - 2D-1: prior bar was directional DOWN → REVERSAL setup  (e.g. 2D-1-2U)
+# Both produce the same setup name; the sequence field ("2U-1" vs "2D-1")
+# tells the trader which variant it is.
 THREE_BAR_COMBOS = [
-    ("2U", "1",  "2-1-2"),
-    ("3",  "1",  "3-1-2"),
-    ("1",  "2U", "1-2-2"),
-    ("3",  "2U", "3-2-2"),
+    ("2U", "1",  "2-1-2"),   # continuation: up, inside, potential up
+    ("2D", "1",  "2-1-2"),   # reversal:     down, inside, potential up
+    ("3",  "1",  "3-1-2"),   # outside bar, inside, potential up
+    ("1",  "2U", "1-2-2"),   # inside then up, potential continuation
+    ("3",  "2U", "3-2-2"),   # outside then up, potential continuation
 ]
 
 TICK = 0.01  # Buy Stop = High + 1 cent
