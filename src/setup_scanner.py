@@ -1,14 +1,23 @@
 """
 Setup Scanner — The Strat v2.0
 ================================
-Detects all 5 setup patterns on the daily chart.
+Detects PENDING setup patterns on the daily chart.
 
-Setup Catalog (all Long, all FTC-bullish):
-  2-1-2  : bars[-2]=2U, bars[-1]=1  (Inside) -> entry above inside bar high
-  3-1-2  : bars[-2]=3,  bars[-1]=1  (Inside) -> entry above inside bar high
-  1-2-2  : bars[-2]=1,  bars[-1]=2U          -> entry above 2U high
-  3-2-2  : bars[-2]=3,  bars[-1]=2U          -> entry above 2U high
-  Machine Gun : price already broke a pivot, entry = next pivot above
+A setup is only valid when bar[-1] is an INSIDE BAR (type "1").
+This means the potential breakout has NOT yet happened — the stock
+is "coiled" and we are setting a Buy Stop above the inside bar's high
+for the NEXT trading day.
+
+Setup Catalog (all Long / FTC-bullish):
+  2-1-2 continuation : bars[-2]=2U, bars[-1]=1  -> potential 2U-1-2U
+  2-1-2 reversal     : bars[-2]=2D, bars[-1]=1  -> potential 2D-1-2U
+  3-1-2              : bars[-2]=3,  bars[-1]=1  -> potential 3-1-2U
+  Machine Gun : bar[-1] already broke a pivot, entry = NEXT pivot above
+                (pending — waiting for the next level to be taken out)
+
+EXCLUDED (bar[-1] already moved — not a pending setup):
+  1-2-2 : bars[-1]=2U  (the up move already happened today)
+  3-2-2 : bars[-1]=2U  (the up move already happened today)
 
 Signal candle = bars[-1] (last completed bar).
 Stop          = Low of signal candle.
@@ -23,19 +32,16 @@ from key_levels import calculate_key_levels, get_targets, calc_rr, LEVEL_ORDER
 
 
 # ── 3-Bar Combo Patterns ──────────────────────────────────────────────────────
-# (bars[-2] type, bars[-1] type, setup name)
+# RULE: bar[-1] MUST be a "1" (inside bar) — the pending breakout candle.
+# The sequence field distinguishes continuation (2U-1) from reversal (2D-1).
 #
-# "2-1-2" has TWO bullish variants:
-#   - 2U-1: prior bar was directional UP   → continuation setup
-#   - 2D-1: prior bar was directional DOWN → REVERSAL setup  (e.g. 2D-1-2U)
-# Both produce the same setup name; the sequence field ("2U-1" vs "2D-1")
-# tells the trader which variant it is.
+# (bars[-2] type, bars[-1] type, setup name)
 THREE_BAR_COMBOS = [
-    ("2U", "1",  "2-1-2"),   # continuation: up, inside, potential up
-    ("2D", "1",  "2-1-2"),   # reversal:     down, inside, potential up
-    ("3",  "1",  "3-1-2"),   # outside bar, inside, potential up
-    ("1",  "2U", "1-2-2"),   # inside then up, potential continuation
-    ("3",  "2U", "3-2-2"),   # outside then up, potential continuation
+    ("2U", "1",  "2-1-2"),   # continuation: prior up,      inside bar → pending 2U-1-2U
+    ("2D", "1",  "2-1-2"),   # reversal:     prior down,    inside bar → pending 2D-1-2U
+    ("3",  "1",  "3-1-2"),   # outside bar,  inside bar     → pending 3-1-2U
+    # 1-2-2 excluded: bar[-1]=2U — directional move already completed
+    # 3-2-2 excluded: bar[-1]=2U — directional move already completed
 ]
 
 TICK = 0.01  # Buy Stop = High + 1 cent
