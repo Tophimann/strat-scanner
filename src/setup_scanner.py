@@ -3,21 +3,23 @@ Setup Scanner — The Strat v2.0
 ================================
 Detects PENDING setup patterns on the daily chart.
 
-A setup is only valid when bar[-1] is an INSIDE BAR (type "1").
-This means the potential breakout has NOT yet happened — the stock
-is "coiled" and we are setting a Buy Stop above the inside bar's high
-for the NEXT trading day.
+Two types of signal candle are valid:
+
+  TYPE A — Inside bar (type "1") as signal:
+    bar[-1]=1 means the breakout has NOT happened yet — stock is coiled.
+    Buy Stop above bar[-1].High for the NEXT trading day.
+
+  TYPE B — Directional bar (type "2U") as signal:
+    bar[-1]=2U means the stock already broke out today.
+    Buy Stop above bar[-1].High = continuation entry for tomorrow.
 
 Setup Catalog (all Long / FTC-bullish):
   2-1-2 continuation : bars[-2]=2U, bars[-1]=1  -> potential 2U-1-2U
   2-1-2 reversal     : bars[-2]=2D, bars[-1]=1  -> potential 2D-1-2U
   3-1-2              : bars[-2]=3,  bars[-1]=1  -> potential 3-1-2U
+  3-2-2              : bars[-2]=3,  bars[-1]=2U -> continuation of outside bar breakout
   Machine Gun : bar[-1] already broke a pivot, entry = NEXT pivot above
                 (pending — waiting for the next level to be taken out)
-
-EXCLUDED (bar[-1] already moved — not a pending setup):
-  1-2-2 : bars[-1]=2U  (the up move already happened today)
-  3-2-2 : bars[-1]=2U  (the up move already happened today)
 
 Signal candle = bars[-1] (last completed bar).
 Stop          = Low of signal candle.
@@ -40,8 +42,7 @@ THREE_BAR_COMBOS = [
     ("2U", "1",  "2-1-2"),   # continuation: prior up,      inside bar → pending 2U-1-2U
     ("2D", "1",  "2-1-2"),   # reversal:     prior down,    inside bar → pending 2D-1-2U
     ("3",  "1",  "3-1-2"),   # outside bar,  inside bar     → pending 3-1-2U
-    # 1-2-2 excluded: bar[-1]=2U — directional move already completed
-    # 3-2-2 excluded: bar[-1]=2U — directional move already completed
+    ("3",  "2U", "3-2-2"),   # outside bar,  2U breakout    → pending continuation 3-2-2U
 ]
 
 TICK = 0.01  # Buy Stop = High + 1 cent
