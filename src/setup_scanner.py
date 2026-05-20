@@ -18,6 +18,7 @@ Setup Catalog (all Long / FTC-bullish):
   2-1-2 reversal     : bars[-2]=2D, bars[-1]=1  -> potential 2D-1-2U
   3-1-2              : bars[-2]=3,  bars[-1]=1  -> potential 3-1-2U
   3-2-2              : bars[-2]=3,  bars[-1]=2U -> continuation of outside bar breakout
+  1-2-2              : bars[-2]=1,  bars[-1]=2U -> continuation of inside bar breakout
   Machine Gun : bar[-1] already broke a pivot, entry = NEXT pivot above
                 (pending — waiting for the next level to be taken out)
 
@@ -43,6 +44,7 @@ THREE_BAR_COMBOS = [
     ("2D", "1",  "2-1-2"),   # reversal:     prior down,    inside bar → pending 2D-1-2U
     ("3",  "1",  "3-1-2"),   # outside bar,  inside bar     → pending 3-1-2U
     ("3",  "2U", "3-2-2"),   # outside bar,  2U breakout    → pending continuation 3-2-2U
+    ("1",  "2U", "1-2-2"),   # inside bar,   2U breakout    → pending continuation 1-2-2U
 ]
 
 TICK = 0.01  # Buy Stop = High + 1 cent
