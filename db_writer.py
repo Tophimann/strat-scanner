@@ -5,8 +5,7 @@ DATABASE_URL must be set in .env or environment.
 """
 
 import os
-import re
-from datetime import date, datetime
+from datetime import date
 from dotenv import load_dotenv
 
 # Load DATABASE_URL: env var takes priority (GitHub Actions / Railway),
@@ -26,7 +25,7 @@ try:
     _PSYCOPG2_AVAILABLE = True
 except ImportError:
     _PSYCOPG2_AVAILABLE = False
-    print("[db_writer] psycopg2 not installed — DB writes disabled. Run: pip install psycopg2-binary")
+    print("[db_writer] psycopg2 not installed -- DB writes disabled. Run: pip install psycopg2-binary")
 
 
 def _get_conn():
@@ -36,27 +35,33 @@ def _get_conn():
     return psycopg2.connect(url)
 
 
-def _priority_key(setup: dict) -> str:
-    """Normalise priority field to DB-expected values."""
-    raw = setup.get("priority", "P3-ALIGNED")
-    if raw in ("P1-TRIPLE", "P1-DOUBLE", "P3-ALIGNED"):
-        return raw
-    if raw.startswith("P2"):
-        return "P2-x-COIL"
-    return raw
+def _f(val, default=0.0) -> float:
+    """Safe float conversion."""
+    try:
+        return float(val) if val is not None else default
+    except (TypeError, ValueError):
+        return default
 
 
-def _tf_chain(setup: dict) -> str | None:
-    """Build a human-readable TF chain string from scanner fields."""
-    htf = setup.get("htf_setup", "")
-    entry_tf = setup.get("entry_tf", "")
-    if htf and entry_tf:
-        return f"{htf}→{entry_tf}"
-    return entry_tf or htf or None
+def _b(val) -> bool:
+    """Safe bool conversion from bool or string."""
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, str):
+        return val.lower() == "true"
+    return bool(val)
 
 
 def upsert_scan_results(setups: list[dict], scan_date: date | None = None) -> int:
-    """Insert/update scan results for one day. Returns number of rows upserted."""
+    """
+    Insert/update scan results for one day. Returns number of rows upserted.
+
+    v2.0 fields written:
+      setupType, sequence, t1, t2, t3, rrT1, rrT2, rrT3, ftcQuarterly
+    Legacy fields kept for backwards-compat:
+      combo (= sequence), priority (= "FTC-3" / "FTC-2" / "FTC-1"),
+      target (= t1), rr (= rrT1), ftcMonthly / ftcWeekly ("true"/"false")
+    """
     if not _PSYCOPG2_AVAILABLE:
         return 0
     if not setups:
@@ -66,29 +71,47 @@ def upsert_scan_results(setups: list[dict], scan_date: date | None = None) -> in
 
     rows = []
     for s in setups:
+        sequence = s.get("sequence") or s.get("combo") or ""
+        t1 = s.get("t1") or s.get("target")
+        t2 = s.get("t2")
+        t3 = s.get("t3")
+        rr_t1 = _f(s.get("rr_t1") or s.get("rr"))
+        rr_t2 = _f(s.get("rr_t2"))
+        rr_t3 = _f(s.get("rr_t3"))
+
         rows.append((
-            day,
-            s.get("symbol", ""),
-            s.get("symbol_tv", s.get("symbol", "")),
-            s.get("combo", ""),
-            _priority_key(s),
-            s.get("ftc_monthly", ""),
-            s.get("ftc_weekly", ""),
-            _tf_chain(s),
-            float(s.get("entry", 0)),
-            float(s.get("stop", 0)),
-            float(s.get("target", 0)),
-            float(s.get("risk_share", 0)),
-            float(s.get("rr", 0)),
-            int(s.get("shares", 0)),
-            float(s.get("risk_dollars", 0)),
-            float(s.get("position_val", 0)),
-            s.get("status", "pending"),
-            None,  # fillPrice
-            None,  # exitPrice
-            None,  # pnl
-            None,  # sector (fetched later by dashboard)
-            s.get("notes", None),
+            day,                                                 # date
+            s.get("symbol", ""),                                 # symbol
+            s.get("symbol_tv", s.get("symbol", "")),            # symbolTv
+            sequence,                                            # combo
+            s.get("priority", "FTC-3"),                         # priority
+            str(s.get("ftc_monthly", "false")).lower(),          # ftcMonthly
+            str(s.get("ftc_weekly", "false")).lower(),           # ftcWeekly
+            None,                                                # tfChain (unused in v2)
+            _f(s.get("entry")),                                  # entry
+            _f(s.get("stop")),                                   # stop
+            _f(t1),                                              # target (= T1)
+            _f(s.get("risk_share")),                             # riskShare
+            rr_t1,                                               # rr (= R:R T1)
+            int(s.get("shares", 0)),                             # shares
+            _f(s.get("risk_dollars")),                           # riskDollars
+            _f(s.get("position_val")),                           # positionVal
+            s.get("status", "pending"),                          # status
+            None,                                                # fillPrice
+            None,                                                # exitPrice
+            None,                                                # pnl
+            None,                                                # sector
+            s.get("notes") or None,                             # notes
+            # v2.0 new fields
+            s.get("setup_type") or s.get("combo") or "",         # setupType
+            sequence,                                            # sequence
+            _f(t1) if t1 is not None else None,                 # t1
+            _f(t2) if t2 is not None else None,                 # t2
+            _f(t3) if t3 is not None else None,                 # t3
+            rr_t1 if rr_t1 else None,                           # rrT1
+            rr_t2 if rr_t2 else None,                           # rrT2
+            rr_t3 if rr_t3 else None,                           # rrT3
+            _b(s.get("ftc_quarterly", True)),                    # ftcQuarterly
         ))
 
     sql = """
@@ -97,19 +120,29 @@ def upsert_scan_results(setups: list[dict], scan_date: date | None = None) -> in
            "ftcMonthly", "ftcWeekly", "tfChain",
            entry, stop, target, "riskShare", rr, shares,
            "riskDollars", "positionVal", status,
-           "fillPrice", "exitPrice", pnl, sector, notes, "createdAt")
+           "fillPrice", "exitPrice", pnl, sector, notes, "createdAt",
+           "setupType", sequence, t1, t2, t3, "rrT1", "rrT2", "rrT3", "ftcQuarterly")
         VALUES %s
         ON CONFLICT (date, symbol) DO UPDATE SET
-          combo        = EXCLUDED.combo,
-          priority     = EXCLUDED.priority,
-          "tfChain"    = EXCLUDED."tfChain",
-          entry        = EXCLUDED.entry,
-          stop         = EXCLUDED.stop,
-          target       = EXCLUDED.target,
-          rr           = EXCLUDED.rr,
-          shares       = EXCLUDED.shares,
-          "riskDollars"= EXCLUDED."riskDollars",
-          status       = EXCLUDED.status
+          combo           = EXCLUDED.combo,
+          priority        = EXCLUDED.priority,
+          "tfChain"       = EXCLUDED."tfChain",
+          entry           = EXCLUDED.entry,
+          stop            = EXCLUDED.stop,
+          target          = EXCLUDED.target,
+          rr              = EXCLUDED.rr,
+          shares          = EXCLUDED.shares,
+          "riskDollars"   = EXCLUDED."riskDollars",
+          status          = EXCLUDED.status,
+          "setupType"     = EXCLUDED."setupType",
+          sequence        = EXCLUDED.sequence,
+          t1              = EXCLUDED.t1,
+          t2              = EXCLUDED.t2,
+          t3              = EXCLUDED.t3,
+          "rrT1"          = EXCLUDED."rrT1",
+          "rrT2"          = EXCLUDED."rrT2",
+          "rrT3"          = EXCLUDED."rrT3",
+          "ftcQuarterly"  = EXCLUDED."ftcQuarterly"
     """
 
     template = """(
@@ -117,7 +150,8 @@ def upsert_scan_results(setups: list[dict], scan_date: date | None = None) -> in
         %s, %s, %s,
         %s, %s, %s, %s, %s, %s,
         %s, %s, %s,
-        %s, %s, %s, %s, %s, NOW()
+        %s, %s, %s, %s, %s, NOW(),
+        %s, %s, %s, %s, %s, %s, %s, %s, %s
     )"""
 
     try:
@@ -146,11 +180,8 @@ def upsert_trades(trades: list[dict]) -> int:
         cur = conn.cursor()
 
         for t in trades:
-            symbol = t.get("symbol", "")
-            fill_price = float(t.get("fill_price", t.get("entry", 0)))
-            stop = float(t.get("stop", 0))
-            risk_dollars = float(t.get("risk_dollars", 988.52))
-            pnl_r = None  # not known at entry
+            symbol     = t.get("symbol", "")
+            fill_price = _f(t.get("fill_price") or t.get("entry"))
 
             # Lookup ScanResult id by symbol + most recent date
             cur.execute(
@@ -168,8 +199,10 @@ def upsert_trades(trades: list[dict]) -> int:
             # Upsert Trade
             cur.execute(
                 """INSERT INTO "Trade"
-                     (id, "scanResultId", "fillPrice", status, "orderPlaced", "openedAt", "createdAt", "updatedAt")
-                   VALUES (gen_random_uuid()::text, %s, %s, 'open', false, NOW(), NOW(), NOW())
+                     (id, "scanResultId", "fillPrice", status, "orderPlaced",
+                      "openedAt", "createdAt", "updatedAt")
+                   VALUES (gen_random_uuid()::text, %s, %s, 'open', false,
+                           NOW(), NOW(), NOW())
                    ON CONFLICT ("scanResultId") DO UPDATE SET
                      "fillPrice" = EXCLUDED."fillPrice",
                      "updatedAt" = NOW()
@@ -177,7 +210,7 @@ def upsert_trades(trades: list[dict]) -> int:
                 (scan_result_id, fill_price)
             )
 
-            # Also update ScanResult status → triggered
+            # Update ScanResult status to triggered
             cur.execute(
                 """UPDATE "ScanResult" SET status='triggered', "fillPrice"=%s
                    WHERE id=%s""",
