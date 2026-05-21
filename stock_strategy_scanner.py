@@ -119,6 +119,7 @@ def build_row(yf_sym: str, tv_sym: str, scan_date_str: str, setup: dict) -> dict
         "stop":          stop,
         "risk_share":    round(entry - stop, 4),
         "target":        t1 or 0.0,                 # backward-compat (= T1)
+        "last_close":    setup.get("last_close"),
         "t1":            t1,
         "t2":            setup.get("t2"),
         "t3":            setup.get("t3"),
