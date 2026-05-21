@@ -1,0 +1,17 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy scanner source
+COPY src/ ./src/
+COPY stock_strategy_scanner.py .
+COPY db_writer.py .
+COPY stock_strategy_symbols.json .
+
+ENV PYTHONPATH=src
+
+CMD ["python", "stock_strategy_scanner.py"]

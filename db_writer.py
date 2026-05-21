@@ -52,9 +52,38 @@ def _b(val) -> bool:
     return bool(val)
 
 
+def clear_scan_date(scan_date: date) -> int:
+    """
+    Delete all ScanResult rows for the given date that are still 'pending'
+    (i.e. not open/triggered trades). Called before each fresh scan write.
+    Returns number of rows deleted.
+    """
+    if not _PSYCOPG2_AVAILABLE:
+        return 0
+    try:
+        conn = _get_conn()
+        cur = conn.cursor()
+        cur.execute(
+            """DELETE FROM "ScanResult"
+               WHERE date = %s AND status = 'pending'""",
+            (scan_date,)
+        )
+        deleted = cur.rowcount
+        conn.commit()
+        cur.close()
+        conn.close()
+        if deleted:
+            print(f"[db_writer] Cleared {deleted} pending rows for {scan_date}")
+        return deleted
+    except Exception as e:
+        print(f"[db_writer] ERROR clearing scan date: {e}")
+        return 0
+
+
 def upsert_scan_results(setups: list[dict], scan_date: date | None = None) -> int:
     """
     Insert/update scan results for one day. Returns number of rows upserted.
+    Clears existing pending rows for the scan date before inserting.
 
     v2.0 fields written:
       setupType, sequence, t1, t2, t3, rrT1, rrT2, rrT3, ftcQuarterly
@@ -68,6 +97,7 @@ def upsert_scan_results(setups: list[dict], scan_date: date | None = None) -> in
         return 0
 
     day = scan_date or date.today()
+    clear_scan_date(day)
 
     rows = []
     for s in setups:
