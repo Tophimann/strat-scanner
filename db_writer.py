@@ -79,6 +79,8 @@ def upsert_scan_results(setups: list[dict], scan_date: date | None = None) -> in
         rr_t2 = _f(s.get("rr_t2"))
         rr_t3 = _f(s.get("rr_t3"))
 
+        last_close = s.get("last_close")
+
         rows.append((
             day,                                                 # date
             s.get("symbol", ""),                                 # symbol
@@ -105,6 +107,7 @@ def upsert_scan_results(setups: list[dict], scan_date: date | None = None) -> in
             # v2.0 new fields
             s.get("setup_type") or s.get("combo") or "",         # setupType
             sequence,                                            # sequence
+            _f(last_close) if last_close is not None else None,  # lastClose
             _f(t1) if t1 is not None else None,                 # t1
             _f(t2) if t2 is not None else None,                 # t2
             _f(t3) if t3 is not None else None,                 # t3
@@ -121,7 +124,7 @@ def upsert_scan_results(setups: list[dict], scan_date: date | None = None) -> in
            entry, stop, target, "riskShare", rr, shares,
            "riskDollars", "positionVal", status,
            "fillPrice", "exitPrice", pnl, sector, notes, "createdAt",
-           "setupType", sequence, t1, t2, t3, "rrT1", "rrT2", "rrT3", "ftcQuarterly")
+           "setupType", sequence, "lastClose", t1, t2, t3, "rrT1", "rrT2", "rrT3", "ftcQuarterly")
         VALUES %s
         ON CONFLICT (date, symbol) DO UPDATE SET
           combo           = EXCLUDED.combo,
@@ -136,6 +139,7 @@ def upsert_scan_results(setups: list[dict], scan_date: date | None = None) -> in
           status          = EXCLUDED.status,
           "setupType"     = EXCLUDED."setupType",
           sequence        = EXCLUDED.sequence,
+          "lastClose"     = EXCLUDED."lastClose",
           t1              = EXCLUDED.t1,
           t2              = EXCLUDED.t2,
           t3              = EXCLUDED.t3,
@@ -151,7 +155,7 @@ def upsert_scan_results(setups: list[dict], scan_date: date | None = None) -> in
         %s, %s, %s, %s, %s, %s,
         %s, %s, %s,
         %s, %s, %s, %s, %s, NOW(),
-        %s, %s, %s, %s, %s, %s, %s, %s, %s
+        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
     )"""
 
     try:
