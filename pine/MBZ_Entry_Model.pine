@@ -185,8 +185,8 @@ if longC1Set and bar_index == longC1Bar + 1
         label.delete(longC1PendingLabel)
         longC1PendingLabel := na
 
-// new C1: bearish candle closing inside an active, non-mitigated bullish FVG
-if not bullPoiMitigated and not na(bullPoiTop) and close < open and close <= bullPoiTop and close >= bullPoiBot
+// new C1: bearish candle whose range touches (even by 1 pip) the active, non-mitigated bullish FVG
+if not bullPoiMitigated and not na(bullPoiTop) and close < open and low <= bullPoiTop and high >= bullPoiBot
     if not na(longC1Line)
         line.delete(longC1Line)
     if not na(longC1PendingLabel)
@@ -327,7 +327,8 @@ if shortC1Set and bar_index == shortC1Bar + 1
         label.delete(shortC1PendingLabel)
         shortC1PendingLabel := na
 
-if not bearPoiMitigated and not na(bearPoiBot) and close > open and close >= bearPoiBot and close <= bearPoiTop
+// new C1: bullish candle whose range touches (even by 1 pip) the active, non-mitigated bearish FVG
+if not bearPoiMitigated and not na(bearPoiBot) and close > open and high >= bearPoiBot and low <= bearPoiTop
     if not na(shortC1Line)
         line.delete(shortC1Line)
     if not na(shortC1PendingLabel)
