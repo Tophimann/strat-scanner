@@ -36,8 +36,8 @@ f_x2(_x1) => extendInfinite ? _x1 + 1 : _x1 + projectionBars
 f_line(_x1, _y1, _y2, _col, _style, _width) =>
     line.new(_x1, _y1, f_x2(_x1), _y2, xloc = xloc.bar_index, extend = f_extend(), color = _col, style = _style, width = _width)
 
-f_label(_x, _y, _txt, _col, _style) =>
-    label.new(_x, _y, _txt, xloc = xloc.bar_index, style = _style, color = color.new(_col, 0), textcolor = color.white, size = size.small)
+f_label(_x, _y, _txt, _col) =>
+    label.new(_x, _y, _txt, xloc = xloc.bar_index, style = label.style_none, color = color.new(_col, 100), textcolor = _col, size = size.small)
 
 f_clearLines(arr) =>
     if array.size(arr) > 0
@@ -204,7 +204,7 @@ if not bullPoiMitigated and not na(bullPoiTop) and bar_index > bullPoiFormBar an
     if showC1Line
         longC1Line := line.new(bar_index, median(open, close), bar_index + 1, median(open, close), xloc = xloc.bar_index, color = longColor, style = line.style_dotted, width = 1)
     if showLabels
-        longC1PendingLabel := f_label(bar_index, low, "C1", longColor, label.style_label_up)
+        longC1PendingLabel := f_label(bar_index, low, "C1", longColor)
 
 if longC1Set and showC1Line and not na(longC1Line)
     line.set_x2(longC1Line, bar_index + 1)
@@ -243,25 +243,25 @@ if longEntryEvent
     if unit > 0
         x1 = longC2Bar
         if showLabels
-            longC2Label := f_label(longC2Bar, low, "C2", longColor, label.style_label_up)
+            longC2Label := f_label(longC2Bar, low, "C2", longColor)
         if showZoneBox
             longZoneBox := box.new(x1, longC2Close, x1 + 1, longC2Open, border_color = na, bgcolor = color.new(longColor, 90))
         if showEntry
             longEntryLine := f_line(x1, longEntry, longEntry, longColor, line.style_dashed, 1)
             if showLabels
-                longEntryLabel := f_label(f_x2(x1), longEntry, "Entry " + str.tostring(longEntry, format.mintick), longColor, label.style_label_left)
+                longEntryLabel := f_label(f_x2(x1), longEntry, "Entry " + str.tostring(longEntry, format.mintick), longColor)
         if showStopLvls
             for n = 1.5 to 2.0 by 0.5
                 lvl = longC2Close - n * unit
                 array.push(longSlLines, f_line(x1, lvl, lvl, stopColor, line.style_dashed, 1))
                 if showLabels
-                    array.push(longSlLabels, f_label(f_x2(x1), lvl, "SL " + str.tostring(n) + " (" + str.tostring(lvl, format.mintick) + ")", stopColor, label.style_label_left))
+                    array.push(longSlLabels, f_label(f_x2(x1), lvl, "SL " + str.tostring(n) + " (" + str.tostring(lvl, format.mintick) + ")", stopColor))
         if showTpLvls
             for n in array.from(-1.0, -2.0, -4.0, -6.0, -7.0)
                 lvl = longC2Close - n * unit
                 array.push(longTpLines, f_line(x1, lvl, lvl, tpColor, line.style_dashed, 1))
                 if showLabels
-                    array.push(longTpLabels, f_label(f_x2(x1), lvl, "TP " + str.tostring(-n) + " (" + str.tostring(lvl, format.mintick) + ")", tpColor, label.style_label_left))
+                    array.push(longTpLabels, f_label(f_x2(x1), lvl, "TP " + str.tostring(-n) + " (" + str.tostring(lvl, format.mintick) + ")", tpColor))
 
 // ============================================================================
 // SHORT SETUP (mirror of long)
@@ -350,7 +350,7 @@ if not bearPoiMitigated and not na(bearPoiBot) and bar_index > bearPoiFormBar an
     if showC1Line
         shortC1Line := line.new(bar_index, median(open, close), bar_index + 1, median(open, close), xloc = xloc.bar_index, color = shortColor, style = line.style_dotted, width = 1)
     if showLabels
-        shortC1PendingLabel := f_label(bar_index, high, "C1", shortColor, label.style_label_down)
+        shortC1PendingLabel := f_label(bar_index, high, "C1", shortColor)
 
 if shortC1Set and showC1Line and not na(shortC1Line)
     line.set_x2(shortC1Line, bar_index + 1)
@@ -386,25 +386,25 @@ if shortEntryEvent
     if unit < 0
         x1 = shortC2Bar
         if showLabels
-            shortC2Label := f_label(shortC2Bar, high, "C2", shortColor, label.style_label_down)
+            shortC2Label := f_label(shortC2Bar, high, "C2", shortColor)
         if showZoneBox
             shortZoneBox := box.new(x1, shortC2Close, x1 + 1, shortC2Open, border_color = na, bgcolor = color.new(shortColor, 90))
         if showEntry
             shortEntryLine := f_line(x1, shortEntry, shortEntry, shortColor, line.style_dashed, 1)
             if showLabels
-                shortEntryLabel := f_label(f_x2(x1), shortEntry, "Entry " + str.tostring(shortEntry, format.mintick), shortColor, label.style_label_left)
+                shortEntryLabel := f_label(f_x2(x1), shortEntry, "Entry " + str.tostring(shortEntry, format.mintick), shortColor)
         if showStopLvls
             for n = 1.5 to 2.0 by 0.5
                 lvl = shortC2Close - n * unit
                 array.push(shortSlLines, f_line(x1, lvl, lvl, stopColor, line.style_dashed, 1))
                 if showLabels
-                    array.push(shortSlLabels, f_label(f_x2(x1), lvl, "SL " + str.tostring(n) + " (" + str.tostring(lvl, format.mintick) + ")", stopColor, label.style_label_left))
+                    array.push(shortSlLabels, f_label(f_x2(x1), lvl, "SL " + str.tostring(n) + " (" + str.tostring(lvl, format.mintick) + ")", stopColor))
         if showTpLvls
             for n in array.from(-1.0, -2.0, -4.0, -6.0, -7.0)
                 lvl = shortC2Close - n * unit
                 array.push(shortTpLines, f_line(x1, lvl, lvl, tpColor, line.style_dashed, 1))
                 if showLabels
-                    array.push(shortTpLabels, f_label(f_x2(x1), lvl, "TP " + str.tostring(-n) + " (" + str.tostring(lvl, format.mintick) + ")", tpColor, label.style_label_left))
+                    array.push(shortTpLabels, f_label(f_x2(x1), lvl, "TP " + str.tostring(-n) + " (" + str.tostring(lvl, format.mintick) + ")", tpColor))
 
 // ============================================================================
 // ONLY ONE SETUP GLOBALLY — a fresh confirmation, long or short, clears
