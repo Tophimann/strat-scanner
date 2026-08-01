@@ -102,6 +102,13 @@ var int   longC2Bar   = na
 
 longEntryEvent = false
 
+// a fresher FVG just formed -> drop any pending C1 that was tied to the superseded one
+if bullFvg and longC1Set
+    longC1Set := false
+    if not na(longC1Line)
+        line.delete(longC1Line)
+        longC1Line := na
+
 // attempt validation on the candle immediately following C1
 if longC1Set and bar_index == longC1Bar + 1
     if close > open and close > median(longC1Open, longC1Close)
@@ -172,6 +179,13 @@ var float shortC2Close = na
 var int   shortC2Bar   = na
 
 shortEntryEvent = false
+
+// a fresher FVG just formed -> drop any pending C1 that was tied to the superseded one
+if bearFvg and shortC1Set
+    shortC1Set := false
+    if not na(shortC1Line)
+        line.delete(shortC1Line)
+        shortC1Line := na
 
 if shortC1Set and bar_index == shortC1Bar + 1
     if close < open and close < median(shortC1Open, shortC1Close)
