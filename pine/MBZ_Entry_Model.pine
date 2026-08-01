@@ -401,6 +401,52 @@ if shortEntryEvent
                     array.push(shortTpLabels, f_label(x1 + 1, lvl, "TP " + str.tostring(-n) + " (" + str.tostring(lvl, format.mintick) + ")", tpColor, label.style_label_left))
 
 // ============================================================================
+// ONLY ONE SETUP GLOBALLY — a fresh confirmation, long or short, clears
+// whatever the other direction still had on the chart
+// ============================================================================
+if longEntryEvent
+    if not na(shortC1ConfirmedLabel)
+        label.delete(shortC1ConfirmedLabel)
+        shortC1ConfirmedLabel := na
+    if not na(shortC2Label)
+        label.delete(shortC2Label)
+        shortC2Label := na
+    if not na(shortZoneBox)
+        box.delete(shortZoneBox)
+        shortZoneBox := na
+    if not na(shortEntryLine)
+        line.delete(shortEntryLine)
+        shortEntryLine := na
+    if not na(shortEntryLabel)
+        label.delete(shortEntryLabel)
+        shortEntryLabel := na
+    f_clearLines(shortSlLines)
+    f_clearLabels(shortSlLabels)
+    f_clearLines(shortTpLines)
+    f_clearLabels(shortTpLabels)
+
+if shortEntryEvent
+    if not na(longC1ConfirmedLabel)
+        label.delete(longC1ConfirmedLabel)
+        longC1ConfirmedLabel := na
+    if not na(longC2Label)
+        label.delete(longC2Label)
+        longC2Label := na
+    if not na(longZoneBox)
+        box.delete(longZoneBox)
+        longZoneBox := na
+    if not na(longEntryLine)
+        line.delete(longEntryLine)
+        longEntryLine := na
+    if not na(longEntryLabel)
+        label.delete(longEntryLabel)
+        longEntryLabel := na
+    f_clearLines(longSlLines)
+    f_clearLabels(longSlLabels)
+    f_clearLines(longTpLines)
+    f_clearLabels(longTpLabels)
+
+// ============================================================================
 // ALERTS
 // ============================================================================
 alertcondition(longEntryEvent, "MBZ Long Entry", "MBZ Long Entry bei {{close}}")
