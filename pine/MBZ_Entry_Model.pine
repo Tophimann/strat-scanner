@@ -242,9 +242,9 @@ if longEntryEvent
         if showLabels
             longC2Label := f_label(longC2Bar, longC2Open, "C2", longColor, label.style_label_down)
         if showZoneBox
-            longZoneBox := box.new(x1, longC2Close, x1 + 1, longC2Open, border_color = longColor, bgcolor = color.new(longColor, 90))
+            longZoneBox := box.new(x1, longC2Close, x1 + 1, longC2Open, border_color = na, bgcolor = color.new(longColor, 90))
         if showEntry
-            longEntryLine := f_line(x1, longEntry, longEntry, longColor, line.style_solid, 2)
+            longEntryLine := f_line(x1, longEntry, longEntry, longColor, line.style_dashed, 1)
             if showLabels
                 longEntryLabel := f_label(x1 + 1, longEntry, "Entry " + str.tostring(longEntry, format.mintick), longColor, label.style_label_left)
         if showStopLvls
@@ -382,9 +382,9 @@ if shortEntryEvent
         if showLabels
             shortC2Label := f_label(shortC2Bar, shortC2Open, "C2", shortColor, label.style_label_up)
         if showZoneBox
-            shortZoneBox := box.new(x1, shortC2Close, x1 + 1, shortC2Open, border_color = shortColor, bgcolor = color.new(shortColor, 90))
+            shortZoneBox := box.new(x1, shortC2Close, x1 + 1, shortC2Open, border_color = na, bgcolor = color.new(shortColor, 90))
         if showEntry
-            shortEntryLine := f_line(x1, shortEntry, shortEntry, shortColor, line.style_solid, 2)
+            shortEntryLine := f_line(x1, shortEntry, shortEntry, shortColor, line.style_dashed, 1)
             if showLabels
                 shortEntryLabel := f_label(x1 + 1, shortEntry, "Entry " + str.tostring(shortEntry, format.mintick), shortColor, label.style_label_left)
         if showStopLvls
