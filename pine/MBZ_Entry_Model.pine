@@ -60,12 +60,14 @@ bearFvg = high < low[2]
 var float bullPoiTop = na
 var float bullPoiBot = na
 var int   bullPoiLeft = na
+var int   bullPoiFormBar = na  // bar index of candle 3 — the FVG isn't complete until after this bar
 var bool  bullPoiMitigated = true
 var box   bullPoiBox = na
 
 var float bearPoiTop = na
 var float bearPoiBot = na
 var int   bearPoiLeft = na
+var int   bearPoiFormBar = na
 var bool  bearPoiMitigated = true
 var box   bearPoiBox = na
 
@@ -86,6 +88,7 @@ if bullFvg
     bullPoiTop := low
     bullPoiBot := high[2]
     bullPoiLeft := bar_index[2]
+    bullPoiFormBar := bar_index
     bullPoiMitigated := false
     if not na(bullPoiBox)
         box.delete(bullPoiBox)
@@ -97,6 +100,7 @@ if bearFvg
     bearPoiTop := low[2]
     bearPoiBot := high
     bearPoiLeft := bar_index[2]
+    bearPoiFormBar := bar_index
     bearPoiMitigated := false
     if not na(bearPoiBox)
         box.delete(bearPoiBox)
@@ -186,7 +190,8 @@ if longC1Set and bar_index == longC1Bar + 1
         longC1PendingLabel := na
 
 // new C1: bearish candle whose range touches (even by 1 pip) the active, non-mitigated bullish FVG
-if not bullPoiMitigated and not na(bullPoiTop) and close < open and low <= bullPoiTop and high >= bullPoiBot
+// — must come strictly after the FVG's own 3-candle formation, never be part of it
+if not bullPoiMitigated and not na(bullPoiTop) and bar_index > bullPoiFormBar and close < open and low <= bullPoiTop and high >= bullPoiBot
     if not na(longC1Line)
         line.delete(longC1Line)
     if not na(longC1PendingLabel)
@@ -328,7 +333,8 @@ if shortC1Set and bar_index == shortC1Bar + 1
         shortC1PendingLabel := na
 
 // new C1: bullish candle whose range touches (even by 1 pip) the active, non-mitigated bearish FVG
-if not bearPoiMitigated and not na(bearPoiBot) and close > open and high >= bearPoiBot and low <= bearPoiTop
+// — must come strictly after the FVG's own 3-candle formation, never be part of it
+if not bearPoiMitigated and not na(bearPoiBot) and bar_index > bearPoiFormBar and close > open and high >= bearPoiBot and low <= bearPoiTop
     if not na(shortC1Line)
         line.delete(shortC1Line)
     if not na(shortC1PendingLabel)
