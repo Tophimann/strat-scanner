@@ -246,19 +246,19 @@ if longEntryEvent
         if showEntry
             longEntryLine := f_line(x1, longEntry, longEntry, longColor, line.style_dashed, 1)
             if showLabels
-                longEntryLabel := f_label(x1 + 1, longEntry, "Entry " + str.tostring(longEntry, format.mintick), longColor, label.style_label_left)
+                longEntryLabel := f_label(f_x2(x1), longEntry, "Entry " + str.tostring(longEntry, format.mintick), longColor, label.style_label_left)
         if showStopLvls
             for n = 1.5 to 2.0 by 0.5
                 lvl = longC2Close - n * unit
                 array.push(longSlLines, f_line(x1, lvl, lvl, stopColor, line.style_dashed, 1))
                 if showLabels
-                    array.push(longSlLabels, f_label(x1 + 1, lvl, "SL " + str.tostring(n) + " (" + str.tostring(lvl, format.mintick) + ")", stopColor, label.style_label_left))
+                    array.push(longSlLabels, f_label(f_x2(x1), lvl, "SL " + str.tostring(n) + " (" + str.tostring(lvl, format.mintick) + ")", stopColor, label.style_label_left))
         if showTpLvls
             for n in array.from(-1.0, -2.0, -4.0, -6.0, -7.0)
                 lvl = longC2Close - n * unit
                 array.push(longTpLines, f_line(x1, lvl, lvl, tpColor, line.style_dashed, 1))
                 if showLabels
-                    array.push(longTpLabels, f_label(x1 + 1, lvl, "TP " + str.tostring(-n) + " (" + str.tostring(lvl, format.mintick) + ")", tpColor, label.style_label_left))
+                    array.push(longTpLabels, f_label(f_x2(x1), lvl, "TP " + str.tostring(-n) + " (" + str.tostring(lvl, format.mintick) + ")", tpColor, label.style_label_left))
 
 // ============================================================================
 // SHORT SETUP (mirror of long)
@@ -386,19 +386,19 @@ if shortEntryEvent
         if showEntry
             shortEntryLine := f_line(x1, shortEntry, shortEntry, shortColor, line.style_dashed, 1)
             if showLabels
-                shortEntryLabel := f_label(x1 + 1, shortEntry, "Entry " + str.tostring(shortEntry, format.mintick), shortColor, label.style_label_left)
+                shortEntryLabel := f_label(f_x2(x1), shortEntry, "Entry " + str.tostring(shortEntry, format.mintick), shortColor, label.style_label_left)
         if showStopLvls
             for n = 1.5 to 2.0 by 0.5
                 lvl = shortC2Close - n * unit
                 array.push(shortSlLines, f_line(x1, lvl, lvl, stopColor, line.style_dashed, 1))
                 if showLabels
-                    array.push(shortSlLabels, f_label(x1 + 1, lvl, "SL " + str.tostring(n) + " (" + str.tostring(lvl, format.mintick) + ")", stopColor, label.style_label_left))
+                    array.push(shortSlLabels, f_label(f_x2(x1), lvl, "SL " + str.tostring(n) + " (" + str.tostring(lvl, format.mintick) + ")", stopColor, label.style_label_left))
         if showTpLvls
             for n in array.from(-1.0, -2.0, -4.0, -6.0, -7.0)
                 lvl = shortC2Close - n * unit
                 array.push(shortTpLines, f_line(x1, lvl, lvl, tpColor, line.style_dashed, 1))
                 if showLabels
-                    array.push(shortTpLabels, f_label(x1 + 1, lvl, "TP " + str.tostring(-n) + " (" + str.tostring(lvl, format.mintick) + ")", tpColor, label.style_label_left))
+                    array.push(shortTpLabels, f_label(f_x2(x1), lvl, "TP " + str.tostring(-n) + " (" + str.tostring(lvl, format.mintick) + ")", tpColor, label.style_label_left))
 
 // ============================================================================
 // ONLY ONE SETUP GLOBALLY — a fresh confirmation, long or short, clears
@@ -445,6 +445,24 @@ if shortEntryEvent
     f_clearLabels(longSlLabels)
     f_clearLines(longTpLines)
     f_clearLabels(longTpLabels)
+
+// ============================================================================
+// keep Entry/SL/TP labels pinned to the right end of their extension —
+// with infinite extension that end is the current bar, so chase it every bar
+// ============================================================================
+if extendInfinite
+    if not na(longEntryLabel)
+        label.set_x(longEntryLabel, bar_index)
+    for lb in longSlLabels
+        label.set_x(lb, bar_index)
+    for lb in longTpLabels
+        label.set_x(lb, bar_index)
+    if not na(shortEntryLabel)
+        label.set_x(shortEntryLabel, bar_index)
+    for lb in shortSlLabels
+        label.set_x(lb, bar_index)
+    for lb in shortTpLabels
+        label.set_x(lb, bar_index)
 
 // ============================================================================
 // ALERTS
