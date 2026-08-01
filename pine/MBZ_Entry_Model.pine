@@ -232,15 +232,18 @@ if longEntryEvent
     f_clearLines(longTpLines)
     f_clearLabels(longTpLabels)
 
-    // promote the pending C1 tag to the confirmed one for this setup
+    // promote the pending C1 tag to the confirmed one for this setup, and
+    // align it with C2's tag — both at the same height, below C2's low
     longC1ConfirmedLabel := longC1PendingLabel
     longC1PendingLabel := na
+    if not na(longC1ConfirmedLabel)
+        label.set_y(longC1ConfirmedLabel, low)
 
     unit = longC2Close - longC2Open
     if unit > 0
         x1 = longC2Bar
         if showLabels
-            longC2Label := f_label(longC2Bar, longC2Open, "C2", longColor, label.style_label_down)
+            longC2Label := f_label(longC2Bar, low, "C2", longColor, label.style_label_up)
         if showZoneBox
             longZoneBox := box.new(x1, longC2Close, x1 + 1, longC2Open, border_color = na, bgcolor = color.new(longColor, 90))
         if showEntry
@@ -373,14 +376,17 @@ if shortEntryEvent
     f_clearLines(shortTpLines)
     f_clearLabels(shortTpLabels)
 
+    // align C1's tag with C2's tag — both at the same height, above C2's high
     shortC1ConfirmedLabel := shortC1PendingLabel
     shortC1PendingLabel := na
+    if not na(shortC1ConfirmedLabel)
+        label.set_y(shortC1ConfirmedLabel, high)
 
     unit = shortC2Close - shortC2Open // negative for a bearish C2
     if unit < 0
         x1 = shortC2Bar
         if showLabels
-            shortC2Label := f_label(shortC2Bar, shortC2Open, "C2", shortColor, label.style_label_up)
+            shortC2Label := f_label(shortC2Bar, high, "C2", shortColor, label.style_label_down)
         if showZoneBox
             shortZoneBox := box.new(x1, shortC2Close, x1 + 1, shortC2Open, border_color = na, bgcolor = color.new(shortColor, 90))
         if showEntry
