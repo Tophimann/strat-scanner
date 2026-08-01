@@ -138,15 +138,36 @@ var array<label> longTpLabels = array.new_label()
 
 longEntryEvent = false
 
-// a fresher FVG just formed -> drop any pending C1 that was tied to the superseded one
-if bullFvg and longC1Set
-    longC1Set := false
-    if not na(longC1Line)
-        line.delete(longC1Line)
-        longC1Line := na
-    if not na(longC1PendingLabel)
-        label.delete(longC1PendingLabel)
-        longC1PendingLabel := na
+// a fresher FVG just formed -> it replaces the old one entirely, so drop any
+// pending C1 AND any already-confirmed setup that was tied to the superseded FVG
+if bullFvg
+    if longC1Set
+        longC1Set := false
+        if not na(longC1Line)
+            line.delete(longC1Line)
+            longC1Line := na
+        if not na(longC1PendingLabel)
+            label.delete(longC1PendingLabel)
+            longC1PendingLabel := na
+    if not na(longC1ConfirmedLabel)
+        label.delete(longC1ConfirmedLabel)
+        longC1ConfirmedLabel := na
+    if not na(longC2Label)
+        label.delete(longC2Label)
+        longC2Label := na
+    if not na(longZoneBox)
+        box.delete(longZoneBox)
+        longZoneBox := na
+    if not na(longEntryLine)
+        line.delete(longEntryLine)
+        longEntryLine := na
+    if not na(longEntryLabel)
+        label.delete(longEntryLabel)
+        longEntryLabel := na
+    f_clearLines(longSlLines)
+    f_clearLabels(longSlLabels)
+    f_clearLines(longTpLines)
+    f_clearLabels(longTpLabels)
 
 // attempt validation on the candle immediately following C1
 if longC1Set and bar_index == longC1Bar + 1
@@ -260,15 +281,36 @@ var array<label> shortTpLabels = array.new_label()
 
 shortEntryEvent = false
 
-// a fresher FVG just formed -> drop any pending C1 that was tied to the superseded one
-if bearFvg and shortC1Set
-    shortC1Set := false
-    if not na(shortC1Line)
-        line.delete(shortC1Line)
-        shortC1Line := na
-    if not na(shortC1PendingLabel)
-        label.delete(shortC1PendingLabel)
-        shortC1PendingLabel := na
+// a fresher FVG just formed -> it replaces the old one entirely, so drop any
+// pending C1 AND any already-confirmed setup that was tied to the superseded FVG
+if bearFvg
+    if shortC1Set
+        shortC1Set := false
+        if not na(shortC1Line)
+            line.delete(shortC1Line)
+            shortC1Line := na
+        if not na(shortC1PendingLabel)
+            label.delete(shortC1PendingLabel)
+            shortC1PendingLabel := na
+    if not na(shortC1ConfirmedLabel)
+        label.delete(shortC1ConfirmedLabel)
+        shortC1ConfirmedLabel := na
+    if not na(shortC2Label)
+        label.delete(shortC2Label)
+        shortC2Label := na
+    if not na(shortZoneBox)
+        box.delete(shortZoneBox)
+        shortZoneBox := na
+    if not na(shortEntryLine)
+        line.delete(shortEntryLine)
+        shortEntryLine := na
+    if not na(shortEntryLabel)
+        label.delete(shortEntryLabel)
+        shortEntryLabel := na
+    f_clearLines(shortSlLines)
+    f_clearLabels(shortSlLabels)
+    f_clearLines(shortTpLines)
+    f_clearLabels(shortTpLabels)
 
 if shortC1Set and bar_index == shortC1Bar + 1
     if close < open and close < median(shortC1Open, shortC1Close)
