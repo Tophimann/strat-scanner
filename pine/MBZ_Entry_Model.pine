@@ -39,6 +39,18 @@ f_line(_x1, _y1, _y2, _col, _style, _width) =>
 f_label(_x, _y, _txt, _col, _style) =>
     label.new(_x, _y, _txt, xloc = xloc.bar_index, style = _style, color = color.new(_col, 0), textcolor = color.white, size = size.small)
 
+f_clearLines(arr) =>
+    if array.size(arr) > 0
+        for ln in arr
+            line.delete(ln)
+        array.clear(arr)
+
+f_clearLabels(arr) =>
+    if array.size(arr) > 0
+        for lb in arr
+            label.delete(lb)
+        array.clear(arr)
+
 // ============================================================================
 // FVG DETECTION (classic 3-candle, wick based, single timeframe — chart TF)
 // ============================================================================
@@ -100,17 +112,29 @@ if showFvgBox and not na(bearPoiBox) and not bearPoiMitigated
 
 // ============================================================================
 // LONG SETUP (bullish FVG -> bearish C1 inside it -> bullish C2 validates)
+// Only the newest setup is ever kept on the chart — confirming a new one
+// deletes every drawing that belonged to the previous one.
 // ============================================================================
 var bool  longC1Set   = false
 var float longC1Open  = na
 var float longC1Close = na
 var int   longC1Bar   = na
 var line  longC1Line  = na
+var label longC1PendingLabel   = na  // "C1" tag while the setup is still unconfirmed
+var label longC1ConfirmedLabel = na  // "C1" tag of the currently displayed (confirmed) setup
 
-var float longEntry   = na
-var float longC2Open  = na
-var float longC2Close = na
-var int   longC2Bar   = na
+var float longEntry     = na
+var float longC2Open    = na
+var float longC2Close   = na
+var int   longC2Bar     = na
+var label longC2Label   = na
+var box   longZoneBox   = na
+var line  longEntryLine = na
+var label longEntryLabel = na
+var array<line>  longSlLines  = array.new_line()
+var array<label> longSlLabels = array.new_label()
+var array<line>  longTpLines  = array.new_line()
+var array<label> longTpLabels = array.new_label()
 
 longEntryEvent = false
 
@@ -120,6 +144,9 @@ if bullFvg and longC1Set
     if not na(longC1Line)
         line.delete(longC1Line)
         longC1Line := na
+    if not na(longC1PendingLabel)
+        label.delete(longC1PendingLabel)
+        longC1PendingLabel := na
 
 // attempt validation on the candle immediately following C1
 if longC1Set and bar_index == longC1Bar + 1
@@ -133,11 +160,17 @@ if longC1Set and bar_index == longC1Bar + 1
     if not na(longC1Line)
         line.delete(longC1Line)
         longC1Line := na
+    if not longEntryEvent and not na(longC1PendingLabel)
+        label.delete(longC1PendingLabel)
+        longC1PendingLabel := na
 
 // new C1: bearish candle closing inside an active, non-mitigated bullish FVG
 if not bullPoiMitigated and not na(bullPoiTop) and close < open and close <= bullPoiTop and close >= bullPoiBot
     if not na(longC1Line)
         line.delete(longC1Line)
+    if not na(longC1PendingLabel)
+        label.delete(longC1PendingLabel)
+        longC1PendingLabel := na
     longC1Open := open
     longC1Close := close
     longC1Bar := bar_index
@@ -145,36 +178,61 @@ if not bullPoiMitigated and not na(bullPoiTop) and close < open and close <= bul
     if showC1Line
         longC1Line := line.new(bar_index, median(open, close), bar_index + 1, median(open, close), xloc = xloc.bar_index, color = longColor, style = line.style_dotted, width = 1)
     if showLabels
-        f_label(bar_index, low, "C1", longColor, label.style_label_up)
+        longC1PendingLabel := f_label(bar_index, low, "C1", longColor, label.style_label_up)
 
 if longC1Set and showC1Line and not na(longC1Line)
     line.set_x2(longC1Line, bar_index + 1)
 
 // draw the C2 / entry / projected levels once validated (entry is placed mechanically at 0.5 of C2 — no invalidation)
 if longEntryEvent
+    // remove everything that belonged to the previous confirmed setup first
+    if not na(longC1ConfirmedLabel)
+        label.delete(longC1ConfirmedLabel)
+        longC1ConfirmedLabel := na
+    if not na(longC2Label)
+        label.delete(longC2Label)
+        longC2Label := na
+    if not na(longZoneBox)
+        box.delete(longZoneBox)
+        longZoneBox := na
+    if not na(longEntryLine)
+        line.delete(longEntryLine)
+        longEntryLine := na
+    if not na(longEntryLabel)
+        label.delete(longEntryLabel)
+        longEntryLabel := na
+    f_clearLines(longSlLines)
+    f_clearLabels(longSlLabels)
+    f_clearLines(longTpLines)
+    f_clearLabels(longTpLabels)
+
+    // promote the pending C1 tag to the confirmed one for this setup
+    longC1ConfirmedLabel := longC1PendingLabel
+    longC1PendingLabel := na
+
     unit = longC2Close - longC2Open
     if unit > 0
         x1 = longC2Bar
         if showLabels
-            f_label(longC2Bar, longC2Open, "C2", longColor, label.style_label_down)
+            longC2Label := f_label(longC2Bar, longC2Open, "C2", longColor, label.style_label_down)
         if showZoneBox
-            box.new(x1, longC2Close, x1 + 1, longC2Open, border_color = longColor, bgcolor = color.new(longColor, 90))
+            longZoneBox := box.new(x1, longC2Close, x1 + 1, longC2Open, border_color = longColor, bgcolor = color.new(longColor, 90))
         if showEntry
-            f_line(x1, longEntry, longEntry, longColor, line.style_solid, 2)
+            longEntryLine := f_line(x1, longEntry, longEntry, longColor, line.style_solid, 2)
             if showLabels
-                f_label(x1 + 1, longEntry, "Entry " + str.tostring(longEntry, format.mintick), longColor, label.style_label_left)
+                longEntryLabel := f_label(x1 + 1, longEntry, "Entry " + str.tostring(longEntry, format.mintick), longColor, label.style_label_left)
         if showStopLvls
             for n = 1.5 to 2.0 by 0.5
                 lvl = longC2Close - n * unit
-                f_line(x1, lvl, lvl, stopColor, line.style_dashed, 1)
+                array.push(longSlLines, f_line(x1, lvl, lvl, stopColor, line.style_dashed, 1))
                 if showLabels
-                    f_label(x1 + 1, lvl, "SL " + str.tostring(n) + " (" + str.tostring(lvl, format.mintick) + ")", stopColor, label.style_label_left)
+                    array.push(longSlLabels, f_label(x1 + 1, lvl, "SL " + str.tostring(n) + " (" + str.tostring(lvl, format.mintick) + ")", stopColor, label.style_label_left))
         if showTpLvls
             for n in array.from(-1.0, -2.0, -4.0, -6.0, -7.0)
                 lvl = longC2Close - n * unit
-                f_line(x1, lvl, lvl, tpColor, line.style_dashed, 1)
+                array.push(longTpLines, f_line(x1, lvl, lvl, tpColor, line.style_dashed, 1))
                 if showLabels
-                    f_label(x1 + 1, lvl, "TP " + str.tostring(-n) + " (" + str.tostring(lvl, format.mintick) + ")", tpColor, label.style_label_left)
+                    array.push(longTpLabels, f_label(x1 + 1, lvl, "TP " + str.tostring(-n) + " (" + str.tostring(lvl, format.mintick) + ")", tpColor, label.style_label_left))
 
 // ============================================================================
 // SHORT SETUP (mirror of long)
@@ -184,11 +242,21 @@ var float shortC1Open  = na
 var float shortC1Close = na
 var int   shortC1Bar   = na
 var line  shortC1Line  = na
+var label shortC1PendingLabel   = na
+var label shortC1ConfirmedLabel = na
 
-var float shortEntry   = na
-var float shortC2Open  = na
-var float shortC2Close = na
-var int   shortC2Bar   = na
+var float shortEntry     = na
+var float shortC2Open    = na
+var float shortC2Close   = na
+var int   shortC2Bar     = na
+var label shortC2Label   = na
+var box   shortZoneBox   = na
+var line  shortEntryLine = na
+var label shortEntryLabel = na
+var array<line>  shortSlLines  = array.new_line()
+var array<label> shortSlLabels = array.new_label()
+var array<line>  shortTpLines  = array.new_line()
+var array<label> shortTpLabels = array.new_label()
 
 shortEntryEvent = false
 
@@ -198,6 +266,9 @@ if bearFvg and shortC1Set
     if not na(shortC1Line)
         line.delete(shortC1Line)
         shortC1Line := na
+    if not na(shortC1PendingLabel)
+        label.delete(shortC1PendingLabel)
+        shortC1PendingLabel := na
 
 if shortC1Set and bar_index == shortC1Bar + 1
     if close < open and close < median(shortC1Open, shortC1Close)
@@ -210,10 +281,16 @@ if shortC1Set and bar_index == shortC1Bar + 1
     if not na(shortC1Line)
         line.delete(shortC1Line)
         shortC1Line := na
+    if not shortEntryEvent and not na(shortC1PendingLabel)
+        label.delete(shortC1PendingLabel)
+        shortC1PendingLabel := na
 
 if not bearPoiMitigated and not na(bearPoiBot) and close > open and close >= bearPoiBot and close <= bearPoiTop
     if not na(shortC1Line)
         line.delete(shortC1Line)
+    if not na(shortC1PendingLabel)
+        label.delete(shortC1PendingLabel)
+        shortC1PendingLabel := na
     shortC1Open := open
     shortC1Close := close
     shortC1Bar := bar_index
@@ -221,35 +298,58 @@ if not bearPoiMitigated and not na(bearPoiBot) and close > open and close >= bea
     if showC1Line
         shortC1Line := line.new(bar_index, median(open, close), bar_index + 1, median(open, close), xloc = xloc.bar_index, color = shortColor, style = line.style_dotted, width = 1)
     if showLabels
-        f_label(bar_index, high, "C1", shortColor, label.style_label_down)
+        shortC1PendingLabel := f_label(bar_index, high, "C1", shortColor, label.style_label_down)
 
 if shortC1Set and showC1Line and not na(shortC1Line)
     line.set_x2(shortC1Line, bar_index + 1)
 
 if shortEntryEvent
+    if not na(shortC1ConfirmedLabel)
+        label.delete(shortC1ConfirmedLabel)
+        shortC1ConfirmedLabel := na
+    if not na(shortC2Label)
+        label.delete(shortC2Label)
+        shortC2Label := na
+    if not na(shortZoneBox)
+        box.delete(shortZoneBox)
+        shortZoneBox := na
+    if not na(shortEntryLine)
+        line.delete(shortEntryLine)
+        shortEntryLine := na
+    if not na(shortEntryLabel)
+        label.delete(shortEntryLabel)
+        shortEntryLabel := na
+    f_clearLines(shortSlLines)
+    f_clearLabels(shortSlLabels)
+    f_clearLines(shortTpLines)
+    f_clearLabels(shortTpLabels)
+
+    shortC1ConfirmedLabel := shortC1PendingLabel
+    shortC1PendingLabel := na
+
     unit = shortC2Close - shortC2Open // negative for a bearish C2
     if unit < 0
         x1 = shortC2Bar
         if showLabels
-            f_label(shortC2Bar, shortC2Open, "C2", shortColor, label.style_label_up)
+            shortC2Label := f_label(shortC2Bar, shortC2Open, "C2", shortColor, label.style_label_up)
         if showZoneBox
-            box.new(x1, shortC2Close, x1 + 1, shortC2Open, border_color = shortColor, bgcolor = color.new(shortColor, 90))
+            shortZoneBox := box.new(x1, shortC2Close, x1 + 1, shortC2Open, border_color = shortColor, bgcolor = color.new(shortColor, 90))
         if showEntry
-            f_line(x1, shortEntry, shortEntry, shortColor, line.style_solid, 2)
+            shortEntryLine := f_line(x1, shortEntry, shortEntry, shortColor, line.style_solid, 2)
             if showLabels
-                f_label(x1 + 1, shortEntry, "Entry " + str.tostring(shortEntry, format.mintick), shortColor, label.style_label_left)
+                shortEntryLabel := f_label(x1 + 1, shortEntry, "Entry " + str.tostring(shortEntry, format.mintick), shortColor, label.style_label_left)
         if showStopLvls
             for n = 1.5 to 2.0 by 0.5
                 lvl = shortC2Close - n * unit
-                f_line(x1, lvl, lvl, stopColor, line.style_dashed, 1)
+                array.push(shortSlLines, f_line(x1, lvl, lvl, stopColor, line.style_dashed, 1))
                 if showLabels
-                    f_label(x1 + 1, lvl, "SL " + str.tostring(n) + " (" + str.tostring(lvl, format.mintick) + ")", stopColor, label.style_label_left)
+                    array.push(shortSlLabels, f_label(x1 + 1, lvl, "SL " + str.tostring(n) + " (" + str.tostring(lvl, format.mintick) + ")", stopColor, label.style_label_left))
         if showTpLvls
             for n in array.from(-1.0, -2.0, -4.0, -6.0, -7.0)
                 lvl = shortC2Close - n * unit
-                f_line(x1, lvl, lvl, tpColor, line.style_dashed, 1)
+                array.push(shortTpLines, f_line(x1, lvl, lvl, tpColor, line.style_dashed, 1))
                 if showLabels
-                    f_label(x1 + 1, lvl, "TP " + str.tostring(-n) + " (" + str.tostring(lvl, format.mintick) + ")", tpColor, label.style_label_left)
+                    array.push(shortTpLabels, f_label(x1 + 1, lvl, "TP " + str.tostring(-n) + " (" + str.tostring(lvl, format.mintick) + ")", tpColor, label.style_label_left))
 
 // ============================================================================
 // ALERTS
