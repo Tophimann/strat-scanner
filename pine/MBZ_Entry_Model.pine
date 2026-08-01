@@ -60,15 +60,24 @@ var box   bearPoiBox = na
 // mitigation of existing POIs (full close-through invalidates them as usable POIs)
 if not bullPoiMitigated and close < bullPoiBot
     bullPoiMitigated := true
+    if not na(bullPoiBox)
+        box.delete(bullPoiBox)
+        bullPoiBox := na
 if not bearPoiMitigated and close > bearPoiTop
     bearPoiMitigated := true
+    if not na(bearPoiBox)
+        box.delete(bearPoiBox)
+        bearPoiBox := na
 
-// register newest, non-mitigated FVG only
+// register newest, non-mitigated FVG only — replaces (deletes) whatever POI box was drawn before
 if bullFvg
     bullPoiTop := low
     bullPoiBot := high[2]
     bullPoiLeft := bar_index[2]
     bullPoiMitigated := false
+    if not na(bullPoiBox)
+        box.delete(bullPoiBox)
+        bullPoiBox := na
     if showFvgBox
         bullPoiBox := box.new(bullPoiLeft, bullPoiTop, bar_index, bullPoiBot, border_color = na, bgcolor = bullPoiColor)
 
@@ -77,6 +86,9 @@ if bearFvg
     bearPoiBot := high
     bearPoiLeft := bar_index[2]
     bearPoiMitigated := false
+    if not na(bearPoiBox)
+        box.delete(bearPoiBox)
+        bearPoiBox := na
     if showFvgBox
         bearPoiBox := box.new(bearPoiLeft, bearPoiTop, bar_index, bearPoiBot, border_color = na, bgcolor = bearPoiColor)
 
