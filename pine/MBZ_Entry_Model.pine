@@ -5,10 +5,9 @@ indicator("MBZ Entry Model by NINE", overlay = true, max_boxes_count = 500, max_
 // INPUTS
 // ============================================================================
 grpPOI = "FVG / POI"
-useVolumeImbalance = input.bool(true, "Volume Imbalances als POI einschließen", group = grpPOI)
-showFvgBox          = input.bool(true, "FVG / POI Box anzeigen", group = grpPOI)
-bullPoiColor         = input.color(color.new(color.teal, 85), "Bullish POI Farbe", group = grpPOI)
-bearPoiColor         = input.color(color.new(color.red, 85), "Bearish POI Farbe", group = grpPOI)
+showFvgBox   = input.bool(true, "FVG Box anzeigen", group = grpPOI)
+bullPoiColor = input.color(color.new(color.teal, 85), "Bullish FVG Farbe", group = grpPOI)
+bearPoiColor = input.color(color.new(color.red, 85), "Bearish FVG Farbe", group = grpPOI)
 
 grpMbz = "MBZ / Entry"
 showC1Line   = input.bool(true, "C1 0.5-Linie (Validierungs-Schwelle) anzeigen", group = grpMbz)
@@ -41,18 +40,10 @@ f_label(_x, _y, _txt, _col, _style) =>
     label.new(_x, _y, _txt, xloc = xloc.bar_index, style = _style, color = color.new(_col, 0), textcolor = color.white, size = size.small)
 
 // ============================================================================
-// FVG / VOLUME IMBALANCE DETECTION (single timeframe only — chart TF)
+// FVG DETECTION (classic 3-candle, wick based, single timeframe — chart TF)
 // ============================================================================
-// classic 3-candle ICT FVG (wick based)
-bullFvgClassic = low > high[2]
-bearFvgClassic = high < low[2]
-
-// 2-candle volume imbalance (body gap, wicks may overlap)
-bullVi = useVolumeImbalance and close[1] < open and not bullFvgClassic
-bearVi = useVolumeImbalance and close[1] > open and not bearFvgClassic
-
-newBullPoi = bullFvgClassic or bullVi
-newBearPoi = bearFvgClassic or bearVi
+bullFvg = low > high[2]
+bearFvg = high < low[2]
 
 var float bullPoiTop = na
 var float bullPoiBot = na
@@ -72,19 +63,19 @@ if not bullPoiMitigated and close < bullPoiBot
 if not bearPoiMitigated and close > bearPoiTop
     bearPoiMitigated := true
 
-// register newest, non-mitigated POI only
-if newBullPoi
-    bullPoiTop := bullFvgClassic ? low : open
-    bullPoiBot := bullFvgClassic ? high[2] : close[1]
-    bullPoiLeft := bullFvgClassic ? bar_index[2] : bar_index[1]
+// register newest, non-mitigated FVG only
+if bullFvg
+    bullPoiTop := low
+    bullPoiBot := high[2]
+    bullPoiLeft := bar_index[2]
     bullPoiMitigated := false
     if showFvgBox
         bullPoiBox := box.new(bullPoiLeft, bullPoiTop, bar_index, bullPoiBot, border_color = na, bgcolor = bullPoiColor)
 
-if newBearPoi
-    bearPoiTop := bearFvgClassic ? low[2] : close[1]
-    bearPoiBot := bearFvgClassic ? high : open
-    bearPoiLeft := bearFvgClassic ? bar_index[2] : bar_index[1]
+if bearFvg
+    bearPoiTop := low[2]
+    bearPoiBot := high
+    bearPoiLeft := bar_index[2]
     bearPoiMitigated := false
     if showFvgBox
         bearPoiBox := box.new(bearPoiLeft, bearPoiTop, bar_index, bearPoiBot, border_color = na, bgcolor = bearPoiColor)
@@ -96,7 +87,7 @@ if showFvgBox and not na(bearPoiBox) and not bearPoiMitigated
     box.set_right(bearPoiBox, bar_index)
 
 // ============================================================================
-// LONG SETUP (bullish POI -> bearish C1 inside it -> bullish C2 validates)
+// LONG SETUP (bullish FVG -> bearish C1 inside it -> bullish C2 validates)
 // ============================================================================
 var bool  longC1Set   = false
 var float longC1Open  = na
@@ -104,14 +95,12 @@ var float longC1Close = na
 var int   longC1Bar   = na
 var line  longC1Line  = na
 
-var bool  longActive   = false
-var float longEntry    = na
-var float longC2Open   = na
-var float longC2Close  = na
-var int   longC2Bar    = na
+var float longEntry   = na
+var float longC2Open  = na
+var float longC2Close = na
+var int   longC2Bar   = na
 
-longEntryEvent      = false
-longInvalidatedEvent = false
+longEntryEvent = false
 
 // attempt validation on the candle immediately following C1
 if longC1Set and bar_index == longC1Bar + 1
@@ -120,14 +109,13 @@ if longC1Set and bar_index == longC1Bar + 1
         longC2Close := close
         longC2Bar := bar_index
         longEntry := median(open, close)
-        longActive := true
         longEntryEvent := true
     longC1Set := false
     if not na(longC1Line)
         line.delete(longC1Line)
         longC1Line := na
 
-// new C1: bearish candle closing inside an active, non-mitigated bullish POI
+// new C1: bearish candle closing inside an active, non-mitigated bullish FVG
 if not bullPoiMitigated and not na(bullPoiTop) and close < open and close <= bullPoiTop and close >= bullPoiBot
     if not na(longC1Line)
         line.delete(longC1Line)
@@ -143,7 +131,7 @@ if not bullPoiMitigated and not na(bullPoiTop) and close < open and close <= bul
 if longC1Set and showC1Line and not na(longC1Line)
     line.set_x2(longC1Line, bar_index + 1)
 
-// draw the C2 / entry / projected levels once validated
+// draw the C2 / entry / projected levels once validated (entry is placed mechanically at 0.5 of C2 — no invalidation)
 if longEntryEvent
     unit = longC2Close - longC2Open
     if unit > 0
@@ -169,11 +157,6 @@ if longEntryEvent
                 if showLabels
                     f_label(x1 + 1, lvl, "TP " + str.tostring(-n) + " (" + str.tostring(lvl, format.mintick) + ")", tpColor, label.style_label_left)
 
-// invalidation: a body close back through the 0.5 (entry) line of C2
-if longActive and bar_index > longC2Bar and close < longEntry
-    longActive := false
-    longInvalidatedEvent := true
-
 // ============================================================================
 // SHORT SETUP (mirror of long)
 // ============================================================================
@@ -183,14 +166,12 @@ var float shortC1Close = na
 var int   shortC1Bar   = na
 var line  shortC1Line  = na
 
-var bool  shortActive   = false
-var float shortEntry    = na
-var float shortC2Open   = na
-var float shortC2Close  = na
-var int   shortC2Bar    = na
+var float shortEntry   = na
+var float shortC2Open  = na
+var float shortC2Close = na
+var int   shortC2Bar   = na
 
-shortEntryEvent      = false
-shortInvalidatedEvent = false
+shortEntryEvent = false
 
 if shortC1Set and bar_index == shortC1Bar + 1
     if close < open and close < median(shortC1Open, shortC1Close)
@@ -198,7 +179,6 @@ if shortC1Set and bar_index == shortC1Bar + 1
         shortC2Close := close
         shortC2Bar := bar_index
         shortEntry := median(open, close)
-        shortActive := true
         shortEntryEvent := true
     shortC1Set := false
     if not na(shortC1Line)
@@ -245,14 +225,8 @@ if shortEntryEvent
                 if showLabels
                     f_label(x1 + 1, lvl, "TP " + str.tostring(-n) + " (" + str.tostring(lvl, format.mintick) + ")", tpColor, label.style_label_left)
 
-if shortActive and bar_index > shortC2Bar and close > shortEntry
-    shortActive := false
-    shortInvalidatedEvent := true
-
 // ============================================================================
 // ALERTS
 // ============================================================================
 alertcondition(longEntryEvent, "MBZ Long Entry", "MBZ Long Entry bei {{close}}")
 alertcondition(shortEntryEvent, "MBZ Short Entry", "MBZ Short Entry bei {{close}}")
-alertcondition(longInvalidatedEvent, "MBZ Long Invalidiert", "MBZ Long Setup invalidiert bei {{close}}")
-alertcondition(shortInvalidatedEvent, "MBZ Short Invalidiert", "MBZ Short Setup invalidiert bei {{close}}")
