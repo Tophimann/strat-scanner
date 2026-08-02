@@ -75,25 +75,6 @@ type FvgZone
 var array<FvgZone> bullFvgs = array.new<FvgZone>()
 var array<FvgZone> bearFvgs = array.new<FvgZone>()
 
-// mitigation: drop any zone whose full range has been closed through
-i_bull = array.size(bullFvgs) - 1
-while i_bull >= 0
-    zM = array.get(bullFvgs, i_bull)
-    if low <= zM.bot
-        if not na(zM.boxRef)
-            box.delete(zM.boxRef)
-        array.remove(bullFvgs, i_bull)
-    i_bull -= 1
-
-i_bear = array.size(bearFvgs) - 1
-while i_bear >= 0
-    zM = array.get(bearFvgs, i_bear)
-    if high >= zM.top
-        if not na(zM.boxRef)
-            box.delete(zM.boxRef)
-        array.remove(bearFvgs, i_bear)
-    i_bear -= 1
-
 // register a newly formed FVG — added to the list, older non-mitigated ones are kept
 if bullFvg
     array.push(bullFvgs, FvgZone.new(low, high[2], bar_index[2], bar_index, false, false, na, na))
@@ -549,6 +530,30 @@ if shortEntryEvent
     f_clearLabels(longSlLabels)
     f_clearLines(longTpLines)
     f_clearLabels(longTpLabels)
+
+// ============================================================================
+// MITIGATION — runs AFTER C1 detection so a candle whose wick reaches all the
+// way through a zone still gets to register as C1 first; only for the *next*
+// bar onward is that zone actually gone. Drop any zone whose wick has reached
+// the far boundary.
+// ============================================================================
+i_bull = array.size(bullFvgs) - 1
+while i_bull >= 0
+    zM = array.get(bullFvgs, i_bull)
+    if low <= zM.bot
+        if not na(zM.boxRef)
+            box.delete(zM.boxRef)
+        array.remove(bullFvgs, i_bull)
+    i_bull -= 1
+
+i_bear = array.size(bearFvgs) - 1
+while i_bear >= 0
+    zM = array.get(bearFvgs, i_bear)
+    if high >= zM.top
+        if not na(zM.boxRef)
+            box.delete(zM.boxRef)
+        array.remove(bearFvgs, i_bear)
+    i_bear -= 1
 
 // ============================================================================
 // FVG BOX LIFECYCLE — only the newest zone, or the zone currently backing a
