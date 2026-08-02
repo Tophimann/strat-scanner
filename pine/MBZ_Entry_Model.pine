@@ -398,10 +398,13 @@ while i_sr1 >= 0
 
 // INVALIDATION — price reached the setup's own "SL 2" reference level: the
 // stop would have been hit, that setup is dead, remove it (independently).
+// Only from the bar AFTER confirmation onward: sl2Level is computed from the
+// C2 candle's own close, so that same candle's own wick can trivially already
+// reach past it, which would delete a setup the instant it's created.
 i_l2 = array.size(longSetups) - 1
 while i_l2 >= 0
     s = array.get(longSetups, i_l2)
-    if low <= s.sl2Level
+    if bar_index > s.c2Bar and low <= s.sl2Level
         f_deleteSetup(s)
         array.remove(longSetups, i_l2)
     i_l2 -= 1
@@ -409,7 +412,7 @@ while i_l2 >= 0
 i_s2 = array.size(shortSetups) - 1
 while i_s2 >= 0
     s = array.get(shortSetups, i_s2)
-    if high >= s.sl2Level
+    if bar_index > s.c2Bar and high >= s.sl2Level
         f_deleteSetup(s)
         array.remove(shortSetups, i_s2)
     i_s2 -= 1
