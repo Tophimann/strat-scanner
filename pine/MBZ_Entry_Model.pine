@@ -23,6 +23,12 @@ shortColor = input.color(color.new(color.red, 0), "Short Farbe", group = grpMbz)
 stopColor  = input.color(color.new(color.gray, 40), "Stop-Level Farbe", group = grpMbz)
 tpColor    = input.color(color.new(color.green, 40), "Ziel-Level Farbe", group = grpMbz)
 
+directionFilter = input.string("Beide", "Richtung", options = ["Beide", "Nur Bullish", "Nur Bearish"], group = grpMbz)
+maxSetups = input.int(1, "Anzahl gleichzeitig sichtbarer bestätigter Setups (pro Richtung)", minval = 1, maxval = 20, group = grpMbz)
+
+longEnabled  = directionFilter != "Nur Bearish"
+shortEnabled = directionFilter != "Nur Bullish"
+
 showLabels = input.bool(true, "C1/C2/Entry Labels anzeigen", group = "Anzeige")
 
 // ============================================================================
@@ -78,13 +84,59 @@ type FvgZone
     line  c1Line          // dotted 0.5 validation-threshold line
     label c1PendingLabel  // "C1" tag while this zone's C1 is unconfirmed
 
+// one fully confirmed (C2-validated) setup's own drawings/state — several of
+// these can be alive at once per direction (see maxSetups)
+type ConfirmedSetup
+    label c1Label
+    label c2Label
+    label c3Label
+    box   zoneBox
+    line  entryLine
+    label entryLabel
+    float entry
+    float sl2Level
+    int   c2Bar
+    int   srcFormBar      // formBar of the FvgZone this setup came from
+    array<line>  slLines
+    array<label> slLabels
+    array<line>  tpLines
+    array<label> tpLabels
+
+f_deleteSetup(s) =>
+    if not na(s.c1Label)
+        label.delete(s.c1Label)
+    if not na(s.c2Label)
+        label.delete(s.c2Label)
+    if not na(s.c3Label)
+        label.delete(s.c3Label)
+    if not na(s.zoneBox)
+        box.delete(s.zoneBox)
+    if not na(s.entryLine)
+        line.delete(s.entryLine)
+    if not na(s.entryLabel)
+        label.delete(s.entryLabel)
+    f_clearLines(s.slLines)
+    f_clearLabels(s.slLabels)
+    f_clearLines(s.tpLines)
+    f_clearLabels(s.tpLabels)
+
+f_formBarLive(fb, setups) =>
+    found = false
+    for s in setups
+        if s.srcFormBar == fb
+            found := true
+    found
+
 var array<FvgZone> bullFvgs = array.new<FvgZone>()
 var array<FvgZone> bearFvgs = array.new<FvgZone>()
 
+var array<ConfirmedSetup> longSetups  = array.new<ConfirmedSetup>()
+var array<ConfirmedSetup> shortSetups = array.new<ConfirmedSetup>()
+
 // register a newly formed FVG — added to the list, older non-mitigated ones are kept
-if bullFvg
+if bullFvg and longEnabled
     array.push(bullFvgs, FvgZone.new(low, high[2], bar_index[2], bar_index, false, false, na, na, false, na, na, na, na, na))
-if bearFvg
+if bearFvg and shortEnabled
     array.push(bearFvgs, FvgZone.new(low[2], high, bar_index[2], bar_index, false, false, na, na, false, na, na, na, na, na))
 
 // ============================================================================
@@ -113,420 +165,249 @@ for z in bullFvgs
 // ============================================================================
 // LONG SETUP (bullish FVG -> bearish C1 inside it -> bullish C2 validates)
 // Each non-mitigated zone tracks its OWN pending C1 independently, so several
-// zones can be "in the running" for a setup at the same time. Only the newest
-// CONFIRMED setup is ever kept on the chart — confirming a new one deletes
-// every drawing that belonged to the previous one.
+// zones can be "in the running" for a setup at the same time. Up to
+// `maxSetups` confirmed setups stay visible at once (FIFO eviction).
 // ============================================================================
-var label longC1ConfirmedLabel = na  // "C1" tag of the currently displayed (confirmed) setup
-var FvgZone longC1Zone = na  // which FVG zone the confirmed setup came from
-
-var float longEntry     = na
-var float longC2Open    = na
-var float longC2Close   = na
-var int   longC2Bar     = na
-var float longSl2Level  = na  // price of the "SL 2" reference level — hitting it kills the setup
-var label longC2Label   = na
-var label longC3Label   = na
-var box   longZoneBox   = na
-var line  longEntryLine = na
-var label longEntryLabel = na
-var array<line>  longSlLines  = array.new_line()
-var array<label> longSlLabels = array.new_label()
-var array<line>  longTpLines  = array.new_line()
-var array<label> longTpLabels = array.new_label()
-
 longEntryEvent = false
 
-// attempt validation on the candle immediately following each zone's own C1
-for z in bullFvgs
-    if z.c1Set and bar_index == z.c1Bar + 1
-        validated = close > open and close > median(z.c1Open, z.c1Close)
-        if validated
-            longC2Open := open
-            longC2Close := close
-            longC2Bar := bar_index
-            longEntry := median(open, close)
-            longEntryEvent := true
-            longC1Zone := z
-        z.c1Set := false
-        if not na(z.c1Line)
-            line.delete(z.c1Line)
-            z.c1Line := na
-        if not validated and not na(z.c1PendingLabel)
-            label.delete(z.c1PendingLabel)
-            z.c1PendingLabel := na
+if longEnabled
+    float newLongC2Open  = na
+    float newLongC2Close = na
+    int   newLongC2Bar   = na
+    float newLongEntry   = na
+    FvgZone newLongC1Zone = na
 
-// new C1: bearish candle whose range touches (even by 1 pip) any active, non-mitigated
-// bullish FVG (not just the newest) — must come after that FVG's own 3-candle
-// formation, and if the FVG was already used once, only counts again after a
-// swing low has been swept in it. Every qualifying zone gets its own C1 — no
-// "winner takes all", so several zones can independently chase a setup.
-if close < open
+    // attempt validation on the candle immediately following each zone's own C1
     for z in bullFvgs
-        if bar_index > z.formBar and (not z.used or z.swept) and low <= z.top and high >= z.bot
+        if z.c1Set and bar_index == z.c1Bar + 1
+            validated = close > open and close > median(z.c1Open, z.c1Close)
+            if validated
+                newLongC2Open := open
+                newLongC2Close := close
+                newLongC2Bar := bar_index
+                newLongEntry := median(open, close)
+                longEntryEvent := true
+                newLongC1Zone := z
+            z.c1Set := false
             if not na(z.c1Line)
                 line.delete(z.c1Line)
-            if not na(z.c1PendingLabel)
+                z.c1Line := na
+            if not validated and not na(z.c1PendingLabel)
                 label.delete(z.c1PendingLabel)
                 z.c1PendingLabel := na
-            z.c1Open := open
-            z.c1Close := close
-            z.c1Bar := bar_index
-            z.c1Set := true
-            if showC1Line
-                z.c1Line := line.new(bar_index, median(open, close), bar_index + 1, median(open, close), xloc = xloc.bar_index, color = longColor, style = line.style_dotted, width = 1)
-            if showLabels
-                z.c1PendingLabel := f_label(bar_index, low - tagOffset, "C1", longColor)
 
-for z in bullFvgs
-    if z.c1Set and showC1Line and not na(z.c1Line)
-        line.set_x2(z.c1Line, bar_index + 1)
-
-// draw the C2 / entry / projected levels once validated (entry is placed mechanically at 0.5 of C2 — no invalidation)
-if longEntryEvent
-    // remove everything that belonged to the previous confirmed setup first
-    if not na(longC1ConfirmedLabel)
-        label.delete(longC1ConfirmedLabel)
-        longC1ConfirmedLabel := na
-    if not na(longC2Label)
-        label.delete(longC2Label)
-        longC2Label := na
-    if not na(longC3Label)
-        label.delete(longC3Label)
-        longC3Label := na
-    if not na(longZoneBox)
-        box.delete(longZoneBox)
-        longZoneBox := na
-    if not na(longEntryLine)
-        line.delete(longEntryLine)
-        longEntryLine := na
-    if not na(longEntryLabel)
-        label.delete(longEntryLabel)
-        longEntryLabel := na
-    f_clearLines(longSlLines)
-    f_clearLabels(longSlLabels)
-    f_clearLines(longTpLines)
-    f_clearLabels(longTpLabels)
-
-    // promote the winning zone's pending C1 tag to the confirmed one for this
-    // setup, and align it with C2's tag — both at the same height, below C2's low
-    if not na(longC1Zone)
-        longC1ConfirmedLabel := longC1Zone.c1PendingLabel
-        longC1Zone.c1PendingLabel := na
-    if not na(longC1ConfirmedLabel)
-        label.set_y(longC1ConfirmedLabel, low - tagOffset)
-
-    unit = longC2Close - longC2Open
-    if unit > 0
-        x1 = longC2Bar
-        longSl2Level := longC2Close - 2.0 * unit
-        if not na(longC1Zone)
-            longC1Zone.used := true
-            longC1Zone.swept := false
-        if showLabels
-            longC2Label := f_label(longC2Bar, low - tagOffset, "C2", longColor)
-            longC3Label := f_label(x1 + 1, low - tagOffset, "C3", longColor)
-        if showZoneBox
-            longZoneBox := box.new(x1, longC2Close, x1 + 1, longC2Open, border_color = na, bgcolor = color.new(longColor, 90))
-        if showEntry
-            longEntryLine := f_line(x1, longEntry, longEntry, longColor, line.style_dashed, 1)
-            if showLabels
-                longEntryLabel := f_label(f_x2(x1), longEntry, "Entry " + str.tostring(longEntry, format.mintick), longColor)
-        if showStopLvls
-            for n = 1.5 to 2.0 by 0.5
-                lvl = longC2Close - n * unit
-                array.push(longSlLines, f_line(x1, lvl, lvl, stopColor, line.style_dashed, 1))
+    // new C1: bearish candle whose range touches (even by 1 pip) any active, non-mitigated
+    // bullish FVG (not just the newest) — must come after that FVG's own 3-candle
+    // formation, and if the FVG was already used once, only counts again after a
+    // swing low has been swept in it. Every qualifying zone gets its own C1 — no
+    // "winner takes all", so several zones can independently chase a setup.
+    if close < open
+        for z in bullFvgs
+            if bar_index > z.formBar and (not z.used or z.swept) and low <= z.top and high >= z.bot
+                if not na(z.c1Line)
+                    line.delete(z.c1Line)
+                if not na(z.c1PendingLabel)
+                    label.delete(z.c1PendingLabel)
+                    z.c1PendingLabel := na
+                z.c1Open := open
+                z.c1Close := close
+                z.c1Bar := bar_index
+                z.c1Set := true
+                if showC1Line
+                    z.c1Line := line.new(bar_index, median(open, close), bar_index + 1, median(open, close), xloc = xloc.bar_index, color = longColor, style = line.style_dotted, width = 1)
                 if showLabels
-                    array.push(longSlLabels, f_label(f_x2(x1), lvl, "SL " + str.tostring(n) + " (" + str.tostring(lvl, format.mintick) + ")", stopColor))
-        if showTpLvls
-            for n in array.from(-1.0, -2.0, -4.0, -6.0, -7.0)
-                lvl = longC2Close - n * unit
-                array.push(longTpLines, f_line(x1, lvl, lvl, tpColor, line.style_dashed, 1))
+                    z.c1PendingLabel := f_label(bar_index, low - tagOffset, "C1", longColor)
+
+    for z in bullFvgs
+        if z.c1Set and showC1Line and not na(z.c1Line)
+            line.set_x2(z.c1Line, bar_index + 1)
+
+    // build and register the confirmed setup (entry is placed mechanically at 0.5 of C2 — no invalidation)
+    if longEntryEvent
+        unit = newLongC2Close - newLongC2Open
+        if unit > 0
+            x1 = newLongC2Bar
+            newSetup = ConfirmedSetup.new(na, na, na, na, na, na, newLongEntry, newLongC2Close - 2.0 * unit, x1, na, array.new_line(), array.new_label(), array.new_line(), array.new_label())
+
+            // promote the winning zone's pending C1 tag to the confirmed one for this
+            // setup, and align it with C2's tag — both at the same height, below C2's low
+            if not na(newLongC1Zone)
+                newSetup.c1Label := newLongC1Zone.c1PendingLabel
+                newLongC1Zone.c1PendingLabel := na
+                newSetup.srcFormBar := newLongC1Zone.formBar
+                newLongC1Zone.used := true
+                newLongC1Zone.swept := false
+            if not na(newSetup.c1Label)
+                label.set_y(newSetup.c1Label, low - tagOffset)
+
+            if showLabels
+                newSetup.c2Label := f_label(newLongC2Bar, low - tagOffset, "C2", longColor)
+                newSetup.c3Label := f_label(x1 + 1, low - tagOffset, "C3", longColor)
+            if showZoneBox
+                newSetup.zoneBox := box.new(x1, newLongC2Close, x1 + 1, newLongC2Open, border_color = na, bgcolor = color.new(longColor, 90))
+            if showEntry
+                newSetup.entryLine := f_line(x1, newLongEntry, newLongEntry, longColor, line.style_dashed, 1)
                 if showLabels
-                    array.push(longTpLabels, f_label(f_x2(x1), lvl, "TP " + str.tostring(-n) + " (" + str.tostring(lvl, format.mintick) + ")", tpColor))
+                    newSetup.entryLabel := f_label(f_x2(x1), newLongEntry, "Entry " + str.tostring(newLongEntry, format.mintick), longColor)
+            if showStopLvls
+                for n = 1.5 to 2.0 by 0.5
+                    lvl = newLongC2Close - n * unit
+                    array.push(newSetup.slLines, f_line(x1, lvl, lvl, stopColor, line.style_dashed, 1))
+                    if showLabels
+                        array.push(newSetup.slLabels, f_label(f_x2(x1), lvl, "SL " + str.tostring(n) + " (" + str.tostring(lvl, format.mintick) + ")", stopColor))
+            if showTpLvls
+                for n in array.from(-1.0, -2.0, -4.0, -6.0, -7.0)
+                    lvl = newLongC2Close - n * unit
+                    array.push(newSetup.tpLines, f_line(x1, lvl, lvl, tpColor, line.style_dashed, 1))
+                    if showLabels
+                        array.push(newSetup.tpLabels, f_label(f_x2(x1), lvl, "TP " + str.tostring(-n) + " (" + str.tostring(lvl, format.mintick) + ")", tpColor))
+
+            array.push(longSetups, newSetup)
+            if array.size(longSetups) > maxSetups
+                oldestLong = array.get(longSetups, 0)
+                f_deleteSetup(oldestLong)
+                array.remove(longSetups, 0)
 
 // ============================================================================
 // SHORT SETUP (mirror of long)
 // ============================================================================
-var label shortC1ConfirmedLabel = na  // "C1" tag of the currently displayed (confirmed) setup
-var FvgZone shortC1Zone = na  // which FVG zone the confirmed setup came from
-
-var float shortEntry     = na
-var float shortC2Open    = na
-var float shortC2Close   = na
-var int   shortC2Bar     = na
-var float shortSl2Level  = na  // price of the "SL 2" reference level — hitting it kills the setup
-var label shortC2Label   = na
-var label shortC3Label   = na
-var box   shortZoneBox   = na
-var line  shortEntryLine = na
-var label shortEntryLabel = na
-var array<line>  shortSlLines  = array.new_line()
-var array<label> shortSlLabels = array.new_label()
-var array<line>  shortTpLines  = array.new_line()
-var array<label> shortTpLabels = array.new_label()
-
 shortEntryEvent = false
 
-// attempt validation on the candle immediately following each zone's own C1
-for z in bearFvgs
-    if z.c1Set and bar_index == z.c1Bar + 1
-        validated = close < open and close < median(z.c1Open, z.c1Close)
-        if validated
-            shortC2Open := open
-            shortC2Close := close
-            shortC2Bar := bar_index
-            shortEntry := median(open, close)
-            shortEntryEvent := true
-            shortC1Zone := z
-        z.c1Set := false
-        if not na(z.c1Line)
-            line.delete(z.c1Line)
-            z.c1Line := na
-        if not validated and not na(z.c1PendingLabel)
-            label.delete(z.c1PendingLabel)
-            z.c1PendingLabel := na
+if shortEnabled
+    float newShortC2Open  = na
+    float newShortC2Close = na
+    int   newShortC2Bar   = na
+    float newShortEntry   = na
+    FvgZone newShortC1Zone = na
 
-// new C1: bullish candle whose range touches (even by 1 pip) any active, non-mitigated
-// bearish FVG (not just the newest) — must come after that FVG's own 3-candle
-// formation, and if the FVG was already used once, only counts again after a
-// swing high has been swept in it. Every qualifying zone gets its own C1 — no
-// "winner takes all", so several zones can independently chase a setup.
-if close > open
+    // attempt validation on the candle immediately following each zone's own C1
     for z in bearFvgs
-        if bar_index > z.formBar and (not z.used or z.swept) and high >= z.bot and low <= z.top
+        if z.c1Set and bar_index == z.c1Bar + 1
+            validated = close < open and close < median(z.c1Open, z.c1Close)
+            if validated
+                newShortC2Open := open
+                newShortC2Close := close
+                newShortC2Bar := bar_index
+                newShortEntry := median(open, close)
+                shortEntryEvent := true
+                newShortC1Zone := z
+            z.c1Set := false
             if not na(z.c1Line)
                 line.delete(z.c1Line)
-            if not na(z.c1PendingLabel)
+                z.c1Line := na
+            if not validated and not na(z.c1PendingLabel)
                 label.delete(z.c1PendingLabel)
                 z.c1PendingLabel := na
-            z.c1Open := open
-            z.c1Close := close
-            z.c1Bar := bar_index
-            z.c1Set := true
-            if showC1Line
-                z.c1Line := line.new(bar_index, median(open, close), bar_index + 1, median(open, close), xloc = xloc.bar_index, color = shortColor, style = line.style_dotted, width = 1)
-            if showLabels
-                z.c1PendingLabel := f_label(bar_index, high + tagOffset, "C1", shortColor)
 
-for z in bearFvgs
-    if z.c1Set and showC1Line and not na(z.c1Line)
-        line.set_x2(z.c1Line, bar_index + 1)
-
-if shortEntryEvent
-    if not na(shortC1ConfirmedLabel)
-        label.delete(shortC1ConfirmedLabel)
-        shortC1ConfirmedLabel := na
-    if not na(shortC2Label)
-        label.delete(shortC2Label)
-        shortC2Label := na
-    if not na(shortC3Label)
-        label.delete(shortC3Label)
-        shortC3Label := na
-    if not na(shortZoneBox)
-        box.delete(shortZoneBox)
-        shortZoneBox := na
-    if not na(shortEntryLine)
-        line.delete(shortEntryLine)
-        shortEntryLine := na
-    if not na(shortEntryLabel)
-        label.delete(shortEntryLabel)
-        shortEntryLabel := na
-    f_clearLines(shortSlLines)
-    f_clearLabels(shortSlLabels)
-    f_clearLines(shortTpLines)
-    f_clearLabels(shortTpLabels)
-
-    // align the winning zone's C1 tag with C2's tag — both at the same height, above C2's high
-    if not na(shortC1Zone)
-        shortC1ConfirmedLabel := shortC1Zone.c1PendingLabel
-        shortC1Zone.c1PendingLabel := na
-    if not na(shortC1ConfirmedLabel)
-        label.set_y(shortC1ConfirmedLabel, high + tagOffset)
-
-    unit = shortC2Close - shortC2Open // negative for a bearish C2
-    if unit < 0
-        x1 = shortC2Bar
-        shortSl2Level := shortC2Close - 2.0 * unit
-        if not na(shortC1Zone)
-            shortC1Zone.used := true
-            shortC1Zone.swept := false
-        if showLabels
-            shortC2Label := f_label(shortC2Bar, high + tagOffset, "C2", shortColor)
-            shortC3Label := f_label(x1 + 1, high + tagOffset, "C3", shortColor)
-        if showZoneBox
-            shortZoneBox := box.new(x1, shortC2Close, x1 + 1, shortC2Open, border_color = na, bgcolor = color.new(shortColor, 90))
-        if showEntry
-            shortEntryLine := f_line(x1, shortEntry, shortEntry, shortColor, line.style_dashed, 1)
-            if showLabels
-                shortEntryLabel := f_label(f_x2(x1), shortEntry, "Entry " + str.tostring(shortEntry, format.mintick), shortColor)
-        if showStopLvls
-            for n = 1.5 to 2.0 by 0.5
-                lvl = shortC2Close - n * unit
-                array.push(shortSlLines, f_line(x1, lvl, lvl, stopColor, line.style_dashed, 1))
+    // new C1: bullish candle whose range touches (even by 1 pip) any active, non-mitigated
+    // bearish FVG (not just the newest) — must come after that FVG's own 3-candle
+    // formation, and if the FVG was already used once, only counts again after a
+    // swing high has been swept in it. Every qualifying zone gets its own C1 — no
+    // "winner takes all", so several zones can independently chase a setup.
+    if close > open
+        for z in bearFvgs
+            if bar_index > z.formBar and (not z.used or z.swept) and high >= z.bot and low <= z.top
+                if not na(z.c1Line)
+                    line.delete(z.c1Line)
+                if not na(z.c1PendingLabel)
+                    label.delete(z.c1PendingLabel)
+                    z.c1PendingLabel := na
+                z.c1Open := open
+                z.c1Close := close
+                z.c1Bar := bar_index
+                z.c1Set := true
+                if showC1Line
+                    z.c1Line := line.new(bar_index, median(open, close), bar_index + 1, median(open, close), xloc = xloc.bar_index, color = shortColor, style = line.style_dotted, width = 1)
                 if showLabels
-                    array.push(shortSlLabels, f_label(f_x2(x1), lvl, "SL " + str.tostring(n) + " (" + str.tostring(lvl, format.mintick) + ")", stopColor))
-        if showTpLvls
-            for n in array.from(-1.0, -2.0, -4.0, -6.0, -7.0)
-                lvl = shortC2Close - n * unit
-                array.push(shortTpLines, f_line(x1, lvl, lvl, tpColor, line.style_dashed, 1))
+                    z.c1PendingLabel := f_label(bar_index, high + tagOffset, "C1", shortColor)
+
+    for z in bearFvgs
+        if z.c1Set and showC1Line and not na(z.c1Line)
+            line.set_x2(z.c1Line, bar_index + 1)
+
+    if shortEntryEvent
+        unit = newShortC2Close - newShortC2Open // negative for a bearish C2
+        if unit < 0
+            x1 = newShortC2Bar
+            newSetup = ConfirmedSetup.new(na, na, na, na, na, na, newShortEntry, newShortC2Close - 2.0 * unit, x1, na, array.new_line(), array.new_label(), array.new_line(), array.new_label())
+
+            // align the winning zone's C1 tag with C2's tag — both at the same height, above C2's high
+            if not na(newShortC1Zone)
+                newSetup.c1Label := newShortC1Zone.c1PendingLabel
+                newShortC1Zone.c1PendingLabel := na
+                newSetup.srcFormBar := newShortC1Zone.formBar
+                newShortC1Zone.used := true
+                newShortC1Zone.swept := false
+            if not na(newSetup.c1Label)
+                label.set_y(newSetup.c1Label, high + tagOffset)
+
+            if showLabels
+                newSetup.c2Label := f_label(newShortC2Bar, high + tagOffset, "C2", shortColor)
+                newSetup.c3Label := f_label(x1 + 1, high + tagOffset, "C3", shortColor)
+            if showZoneBox
+                newSetup.zoneBox := box.new(x1, newShortC2Close, x1 + 1, newShortC2Open, border_color = na, bgcolor = color.new(shortColor, 90))
+            if showEntry
+                newSetup.entryLine := f_line(x1, newShortEntry, newShortEntry, shortColor, line.style_dashed, 1)
                 if showLabels
-                    array.push(shortTpLabels, f_label(f_x2(x1), lvl, "TP " + str.tostring(-n) + " (" + str.tostring(lvl, format.mintick) + ")", tpColor))
+                    newSetup.entryLabel := f_label(f_x2(x1), newShortEntry, "Entry " + str.tostring(newShortEntry, format.mintick), shortColor)
+            if showStopLvls
+                for n = 1.5 to 2.0 by 0.5
+                    lvl = newShortC2Close - n * unit
+                    array.push(newSetup.slLines, f_line(x1, lvl, lvl, stopColor, line.style_dashed, 1))
+                    if showLabels
+                        array.push(newSetup.slLabels, f_label(f_x2(x1), lvl, "SL " + str.tostring(n) + " (" + str.tostring(lvl, format.mintick) + ")", stopColor))
+            if showTpLvls
+                for n in array.from(-1.0, -2.0, -4.0, -6.0, -7.0)
+                    lvl = newShortC2Close - n * unit
+                    array.push(newSetup.tpLines, f_line(x1, lvl, lvl, tpColor, line.style_dashed, 1))
+                    if showLabels
+                        array.push(newSetup.tpLabels, f_label(f_x2(x1), lvl, "TP " + str.tostring(-n) + " (" + str.tostring(lvl, format.mintick) + ")", tpColor))
+
+            array.push(shortSetups, newSetup)
+            if array.size(shortSetups) > maxSetups
+                oldestShort = array.get(shortSetups, 0)
+                f_deleteSetup(oldestShort)
+                array.remove(shortSetups, 0)
 
 // ============================================================================
 // INVALIDATION
 // Rule 1: C3 (the candle right after C2) never traded back into the entry
-// (0.5 of C2). Once C4 forms, the whole setup is dead: remove it.
+// (0.5 of C2). Once C4 forms, that individual setup is dead: remove it.
+// Applies independently to every currently visible setup.
 // ============================================================================
-if not na(longZoneBox) and bar_index == longC2Bar + 2 and low[1] > longEntry
-    if not na(longC1ConfirmedLabel)
-        label.delete(longC1ConfirmedLabel)
-        longC1ConfirmedLabel := na
-    if not na(longC2Label)
-        label.delete(longC2Label)
-        longC2Label := na
-    if not na(longC3Label)
-        label.delete(longC3Label)
-        longC3Label := na
-    if not na(longZoneBox)
-        box.delete(longZoneBox)
-        longZoneBox := na
-    if not na(longEntryLine)
-        line.delete(longEntryLine)
-        longEntryLine := na
-    if not na(longEntryLabel)
-        label.delete(longEntryLabel)
-        longEntryLabel := na
-    f_clearLines(longSlLines)
-    f_clearLabels(longSlLabels)
-    f_clearLines(longTpLines)
-    f_clearLabels(longTpLabels)
+i_lr1 = array.size(longSetups) - 1
+while i_lr1 >= 0
+    s = array.get(longSetups, i_lr1)
+    if bar_index == s.c2Bar + 2 and low[1] > s.entry
+        f_deleteSetup(s)
+        array.remove(longSetups, i_lr1)
+    i_lr1 -= 1
 
-if not na(shortZoneBox) and bar_index == shortC2Bar + 2 and high[1] < shortEntry
-    if not na(shortC1ConfirmedLabel)
-        label.delete(shortC1ConfirmedLabel)
-        shortC1ConfirmedLabel := na
-    if not na(shortC2Label)
-        label.delete(shortC2Label)
-        shortC2Label := na
-    if not na(shortC3Label)
-        label.delete(shortC3Label)
-        shortC3Label := na
-    if not na(shortZoneBox)
-        box.delete(shortZoneBox)
-        shortZoneBox := na
-    if not na(shortEntryLine)
-        line.delete(shortEntryLine)
-        shortEntryLine := na
-    if not na(shortEntryLabel)
-        label.delete(shortEntryLabel)
-        shortEntryLabel := na
-    f_clearLines(shortSlLines)
-    f_clearLabels(shortSlLabels)
-    f_clearLines(shortTpLines)
-    f_clearLabels(shortTpLabels)
+i_sr1 = array.size(shortSetups) - 1
+while i_sr1 >= 0
+    s = array.get(shortSetups, i_sr1)
+    if bar_index == s.c2Bar + 2 and high[1] < s.entry
+        f_deleteSetup(s)
+        array.remove(shortSetups, i_sr1)
+    i_sr1 -= 1
 
-// INVALIDATION — price reached the "SL 2" reference level: the stop would
-// have been hit, the setup is dead, remove it.
-if not na(longZoneBox) and low <= longSl2Level
-    if not na(longC1ConfirmedLabel)
-        label.delete(longC1ConfirmedLabel)
-        longC1ConfirmedLabel := na
-    if not na(longC2Label)
-        label.delete(longC2Label)
-        longC2Label := na
-    if not na(longC3Label)
-        label.delete(longC3Label)
-        longC3Label := na
-    if not na(longZoneBox)
-        box.delete(longZoneBox)
-        longZoneBox := na
-    if not na(longEntryLine)
-        line.delete(longEntryLine)
-        longEntryLine := na
-    if not na(longEntryLabel)
-        label.delete(longEntryLabel)
-        longEntryLabel := na
-    f_clearLines(longSlLines)
-    f_clearLabels(longSlLabels)
-    f_clearLines(longTpLines)
-    f_clearLabels(longTpLabels)
+// INVALIDATION — price reached the setup's own "SL 2" reference level: the
+// stop would have been hit, that setup is dead, remove it (independently).
+i_l2 = array.size(longSetups) - 1
+while i_l2 >= 0
+    s = array.get(longSetups, i_l2)
+    if low <= s.sl2Level
+        f_deleteSetup(s)
+        array.remove(longSetups, i_l2)
+    i_l2 -= 1
 
-if not na(shortZoneBox) and high >= shortSl2Level
-    if not na(shortC1ConfirmedLabel)
-        label.delete(shortC1ConfirmedLabel)
-        shortC1ConfirmedLabel := na
-    if not na(shortC2Label)
-        label.delete(shortC2Label)
-        shortC2Label := na
-    if not na(shortC3Label)
-        label.delete(shortC3Label)
-        shortC3Label := na
-    if not na(shortZoneBox)
-        box.delete(shortZoneBox)
-        shortZoneBox := na
-    if not na(shortEntryLine)
-        line.delete(shortEntryLine)
-        shortEntryLine := na
-    if not na(shortEntryLabel)
-        label.delete(shortEntryLabel)
-        shortEntryLabel := na
-    f_clearLines(shortSlLines)
-    f_clearLabels(shortSlLabels)
-    f_clearLines(shortTpLines)
-    f_clearLabels(shortTpLabels)
-
-// ============================================================================
-// ONLY ONE SETUP GLOBALLY — a fresh confirmation, long or short, clears
-// whatever the other direction still had on the chart
-// ============================================================================
-if longEntryEvent
-    if not na(shortC1ConfirmedLabel)
-        label.delete(shortC1ConfirmedLabel)
-        shortC1ConfirmedLabel := na
-    if not na(shortC2Label)
-        label.delete(shortC2Label)
-        shortC2Label := na
-    if not na(shortC3Label)
-        label.delete(shortC3Label)
-        shortC3Label := na
-    if not na(shortZoneBox)
-        box.delete(shortZoneBox)
-        shortZoneBox := na
-    if not na(shortEntryLine)
-        line.delete(shortEntryLine)
-        shortEntryLine := na
-    if not na(shortEntryLabel)
-        label.delete(shortEntryLabel)
-        shortEntryLabel := na
-    f_clearLines(shortSlLines)
-    f_clearLabels(shortSlLabels)
-    f_clearLines(shortTpLines)
-    f_clearLabels(shortTpLabels)
-
-if shortEntryEvent
-    if not na(longC1ConfirmedLabel)
-        label.delete(longC1ConfirmedLabel)
-        longC1ConfirmedLabel := na
-    if not na(longC2Label)
-        label.delete(longC2Label)
-        longC2Label := na
-    if not na(longC3Label)
-        label.delete(longC3Label)
-        longC3Label := na
-    if not na(longZoneBox)
-        box.delete(longZoneBox)
-        longZoneBox := na
-    if not na(longEntryLine)
-        line.delete(longEntryLine)
-        longEntryLine := na
-    if not na(longEntryLabel)
-        label.delete(longEntryLabel)
-        longEntryLabel := na
-    f_clearLines(longSlLines)
-    f_clearLabels(longSlLabels)
-    f_clearLines(longTpLines)
-    f_clearLabels(longTpLabels)
+i_s2 = array.size(shortSetups) - 1
+while i_s2 >= 0
+    s = array.get(shortSetups, i_s2)
+    if high >= s.sl2Level
+        f_deleteSetup(s)
+        array.remove(shortSetups, i_s2)
+    i_s2 -= 1
 
 // ============================================================================
 // MITIGATION — a zone is only mitigated once a candle's BODY closes beyond
@@ -562,28 +443,19 @@ while i_bear >= 0
     i_bear -= 1
 
 // ============================================================================
-// FVG BOX LIFECYCLE — only the newest zone, or the zone currently backing a
+// FVG BOX LIFECYCLE — only the newest zone, or a zone currently backing any
 // still-alive confirmed setup, keeps a visible box. A zone whose C1 is only
 // pending (C2 hasn't formed/validated yet) shows NO box — the box only
 // appears once C1 is "complete", i.e. while C2 is forming/validated.
 // Every other zone (old, already resolved one way or another — success,
-// failure or invalidation) is decluttered. Runs last so longZoneBox /
-// shortZoneBox already reflect this bar's confirmations and invalidations.
+// failure or invalidation) is decluttered. Runs last so longSetups /
+// shortSetups already reflect this bar's confirmations and invalidations.
 // ============================================================================
-longZoneLive   = not na(longZoneBox)
-shortZoneLive  = not na(shortZoneBox)
-int longC1FormBar = na
-if longZoneLive and not na(longC1Zone)
-    longC1FormBar := longC1Zone.formBar
-int shortC1FormBar = na
-if shortZoneLive and not na(shortC1Zone)
-    shortC1FormBar := shortC1Zone.formBar
-
 if array.size(bullFvgs) > 0
     lastIdxBull = array.size(bullFvgs) - 1
     for i = 0 to lastIdxBull
         z = array.get(bullFvgs, i)
-        keepBull = i == lastIdxBull or (not na(longC1FormBar) and z.formBar == longC1FormBar)
+        keepBull = i == lastIdxBull or f_formBarLive(z.formBar, longSetups)
         if keepBull
             if na(z.boxRef) and showFvgBox
                 z.boxRef := box.new(z.leftBar, z.top, bar_index + 2, z.bot, border_color = na, bgcolor = bullPoiColor)
@@ -597,7 +469,7 @@ if array.size(bearFvgs) > 0
     lastIdxBear = array.size(bearFvgs) - 1
     for i = 0 to lastIdxBear
         z = array.get(bearFvgs, i)
-        keepBear = i == lastIdxBear or (not na(shortC1FormBar) and z.formBar == shortC1FormBar)
+        keepBear = i == lastIdxBear or f_formBarLive(z.formBar, shortSetups)
         if keepBear
             if na(z.boxRef) and showFvgBox
                 z.boxRef := box.new(z.leftBar, z.top, bar_index + 2, z.bot, border_color = na, bgcolor = bearPoiColor)
@@ -612,18 +484,20 @@ if array.size(bearFvgs) > 0
 // with infinite extension that end is the current bar, so chase it every bar
 // ============================================================================
 if extendInfinite
-    if not na(longEntryLabel)
-        label.set_x(longEntryLabel, bar_index)
-    for lb in longSlLabels
-        label.set_x(lb, bar_index)
-    for lb in longTpLabels
-        label.set_x(lb, bar_index)
-    if not na(shortEntryLabel)
-        label.set_x(shortEntryLabel, bar_index)
-    for lb in shortSlLabels
-        label.set_x(lb, bar_index)
-    for lb in shortTpLabels
-        label.set_x(lb, bar_index)
+    for s in longSetups
+        if not na(s.entryLabel)
+            label.set_x(s.entryLabel, bar_index)
+        for lb in s.slLabels
+            label.set_x(lb, bar_index)
+        for lb in s.tpLabels
+            label.set_x(lb, bar_index)
+    for s in shortSetups
+        if not na(s.entryLabel)
+            label.set_x(s.entryLabel, bar_index)
+        for lb in s.slLabels
+            label.set_x(lb, bar_index)
+        for lb in s.tpLabels
+            label.set_x(lb, bar_index)
 
 // ============================================================================
 // ALERTS
