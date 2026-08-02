@@ -56,99 +56,99 @@ tagOffset = ta.atr(14) * tagOffsetMult
 
 // ============================================================================
 // FVG DETECTION (classic 3-candle, wick based, single timeframe — chart TF)
+// Every non-mitigated FVG is kept (not just the newest), so a candle can
+// still touch and trigger an older, still-valid gap.
 // ============================================================================
 bullFvg = low > high[2]
 bearFvg = high < low[2]
 
-var float bullPoiTop = na
-var float bullPoiBot = na
-var int   bullPoiLeft = na
-var int   bullPoiFormBar = na  // bar index of candle 3 — the FVG isn't complete until after this bar
-var bool  bullPoiMitigated = true
-var box   bullPoiBox = na
-var bool  bullPoiUsed  = false  // this FVG already produced a confirmed setup once
-var bool  bullPoiSwept = false  // a swing low formed after that use has since been swept inside the FVG
-var float bullLastSwingLow = na
+type FvgZone
+    float top
+    float bot
+    int   leftBar
+    int   formBar
+    bool  touched   // a C1 has fired on this zone at least once — keeps its box alive
+    bool  used      // this zone already produced a confirmed setup
+    bool  swept     // a swing point formed after that use has since been swept in it
+    float lastSwing
+    box   boxRef
 
-var float bearPoiTop = na
-var float bearPoiBot = na
-var int   bearPoiLeft = na
-var int   bearPoiFormBar = na
-var bool  bearPoiMitigated = true
-var box   bearPoiBox = na
-var bool  bearPoiUsed  = false  // this FVG already produced a confirmed setup once
-var bool  bearPoiSwept = false  // a swing high formed after that use has since been swept inside the FVG
-var float bearLastSwingHigh = na
+var array<FvgZone> bullFvgs = array.new<FvgZone>()
+var array<FvgZone> bearFvgs = array.new<FvgZone>()
 
-// mitigation of existing POIs (full close-through invalidates them as usable POIs)
-if not bullPoiMitigated and close < bullPoiBot
-    bullPoiMitigated := true
-    if not na(bullPoiBox)
-        box.delete(bullPoiBox)
-        bullPoiBox := na
-if not bearPoiMitigated and close > bearPoiTop
-    bearPoiMitigated := true
-    if not na(bearPoiBox)
-        box.delete(bearPoiBox)
-        bearPoiBox := na
+// mitigation: drop any zone whose full range has been closed through
+i_bull = array.size(bullFvgs) - 1
+while i_bull >= 0
+    zM = array.get(bullFvgs, i_bull)
+    if close < zM.bot
+        if not na(zM.boxRef)
+            box.delete(zM.boxRef)
+        array.remove(bullFvgs, i_bull)
+    i_bull -= 1
 
-// register newest, non-mitigated FVG only — replaces (deletes) whatever POI box was drawn before
+i_bear = array.size(bearFvgs) - 1
+while i_bear >= 0
+    zM = array.get(bearFvgs, i_bear)
+    if close > zM.top
+        if not na(zM.boxRef)
+            box.delete(zM.boxRef)
+        array.remove(bearFvgs, i_bear)
+    i_bear -= 1
+
+// register a newly formed FVG — added to the list, older non-mitigated ones are kept
 if bullFvg
-    bullPoiTop := low
-    bullPoiBot := high[2]
-    bullPoiLeft := bar_index[2]
-    bullPoiFormBar := bar_index
-    bullPoiMitigated := false
-    bullPoiUsed := false
-    bullPoiSwept := false
-    bullLastSwingLow := na
-    if not na(bullPoiBox)
-        box.delete(bullPoiBox)
-        bullPoiBox := na
-    if showFvgBox
-        bullPoiBox := box.new(bullPoiLeft, bullPoiTop, bar_index, bullPoiBot, border_color = na, bgcolor = bullPoiColor)
-
+    array.push(bullFvgs, FvgZone.new(low, high[2], bar_index[2], bar_index, false, false, false, na, na))
 if bearFvg
-    bearPoiTop := low[2]
-    bearPoiBot := high
-    bearPoiLeft := bar_index[2]
-    bearPoiFormBar := bar_index
-    bearPoiMitigated := false
-    bearPoiUsed := false
-    bearPoiSwept := false
-    bearLastSwingHigh := na
-    if not na(bearPoiBox)
-        box.delete(bearPoiBox)
-        bearPoiBox := na
-    if showFvgBox
-        bearPoiBox := box.new(bearPoiLeft, bearPoiTop, bar_index, bearPoiBot, border_color = na, bgcolor = bearPoiColor)
+    array.push(bearFvgs, FvgZone.new(low[2], high, bar_index[2], bar_index, false, false, false, na, na))
 
-// keep active POI boxes growing to the right until mitigated — always 2 bars ahead of the current bar
-if showFvgBox and not na(bullPoiBox) and not bullPoiMitigated
-    box.set_right(bullPoiBox, bar_index + 2)
-if showFvgBox and not na(bearPoiBox) and not bearPoiMitigated
-    box.set_right(bearPoiBox, bar_index + 2)
+// box lifecycle: the newest zone always has a box; any other zone keeps its
+// box only if it has been touched by a C1 — otherwise it's decluttered
+if array.size(bullFvgs) > 0
+    newestBull = array.get(bullFvgs, array.size(bullFvgs) - 1)
+    if na(newestBull.boxRef) and showFvgBox
+        newestBull.boxRef := box.new(newestBull.leftBar, newestBull.top, bar_index + 2, newestBull.bot, border_color = na, bgcolor = bullPoiColor)
+    for z in bullFvgs
+        if not na(z.boxRef)
+            if z == newestBull or z.touched
+                box.set_right(z.boxRef, bar_index + 2)
+            else
+                box.delete(z.boxRef)
+                z.boxRef := na
+
+if array.size(bearFvgs) > 0
+    newestBear = array.get(bearFvgs, array.size(bearFvgs) - 1)
+    if na(newestBear.boxRef) and showFvgBox
+        newestBear.boxRef := box.new(newestBear.leftBar, newestBear.top, bar_index + 2, newestBear.bot, border_color = na, bgcolor = bearPoiColor)
+    for z in bearFvgs
+        if not na(z.boxRef)
+            if z == newestBear or z.touched
+                box.set_right(z.boxRef, bar_index + 2)
+            else
+                box.delete(z.boxRef)
+                z.boxRef := na
 
 // ============================================================================
-// SWING POINTS — gate FVG *reuse*: once an FVG already produced a confirmed
-// setup, a further C1 in it only counts after a swing point (classic 3-bar
-// fractal) that formed since then gets swept (wick only) while trading
-// inside that same FVG zone.
+// SWING POINTS — gate FVG *reuse* per zone: once a zone already produced a
+// confirmed setup, a further C1 in it only counts after a swing point
+// (classic 3-bar fractal) that formed since then gets swept (wick only)
+// while trading inside that same zone.
 // ============================================================================
 swingHighConfirmed = high[1] > high[2] and high[1] > high[0]
 swingLowConfirmed  = low[1]  < low[2]  and low[1]  < low[0]
 
-// bearish FVG reuse: needs a swing high swept inside the FVG zone
-if bearPoiUsed and not bearPoiSwept and not na(bearLastSwingHigh) and high > bearLastSwingHigh and low <= bearPoiTop and high >= bearPoiBot
-    bearPoiSwept := true
-if bearPoiUsed and not bearPoiSwept and swingHighConfirmed
-    bearLastSwingHigh := high[1]
+for z in bearFvgs
+    if z.used and not z.swept
+        if not na(z.lastSwing) and high > z.lastSwing and low <= z.top and high >= z.bot
+            z.swept := true
+        if not z.swept and swingHighConfirmed
+            z.lastSwing := high[1]
 
-// bullish FVG reuse: needs a swing low swept inside the FVG zone
-if bullPoiUsed and not bullPoiSwept and not na(bullLastSwingLow) and low < bullLastSwingLow and low <= bullPoiTop and high >= bullPoiBot
-    bullPoiSwept := true
-if bullPoiUsed and not bullPoiSwept and swingLowConfirmed
-    bullLastSwingLow := low[1]
+for z in bullFvgs
+    if z.used and not z.swept
+        if not na(z.lastSwing) and low < z.lastSwing and low <= z.top and high >= z.bot
+            z.swept := true
+        if not z.swept and swingLowConfirmed
+            z.lastSwing := low[1]
 
 // ============================================================================
 // LONG SETUP (bullish FVG -> bearish C1 inside it -> bullish C2 validates)
@@ -162,6 +162,7 @@ var int   longC1Bar   = na
 var line  longC1Line  = na
 var label longC1PendingLabel   = na  // "C1" tag while the setup is still unconfirmed
 var label longC1ConfirmedLabel = na  // "C1" tag of the currently displayed (confirmed) setup
+var FvgZone longC1Zone = na  // which FVG zone this C1 came from
 
 var float longEntry     = na
 var float longC2Open    = na
@@ -180,20 +181,6 @@ var array<label> longTpLabels = array.new_label()
 
 longEntryEvent = false
 
-// a fresher FVG just formed -> drop any still-unconfirmed pending C1 search tied
-// to the superseded FVG. An already-triggered/confirmed setup is NOT touched
-// here — it only ever gets replaced by a newly *confirmed* setup, or removed
-// by the invalidation rules below, never just because a new FVG appeared
-// (a fresh FVG forms constantly right after a good entry keeps running).
-if bullFvg and longC1Set
-    longC1Set := false
-    if not na(longC1Line)
-        line.delete(longC1Line)
-        longC1Line := na
-    if not na(longC1PendingLabel)
-        label.delete(longC1PendingLabel)
-        longC1PendingLabel := na
-
 // attempt validation on the candle immediately following C1
 if longC1Set and bar_index == longC1Bar + 1
     if close > open and close > median(longC1Open, longC1Close)
@@ -210,23 +197,31 @@ if longC1Set and bar_index == longC1Bar + 1
         label.delete(longC1PendingLabel)
         longC1PendingLabel := na
 
-// new C1: bearish candle whose range touches (even by 1 pip) the active, non-mitigated bullish FVG
-// — must come strictly after the FVG's own 3-candle formation, never be part of it
-// — if the FVG was already used once, it only counts again after a swing low has been swept in it
-if not bullPoiMitigated and not na(bullPoiTop) and bar_index > bullPoiFormBar and (not bullPoiUsed or bullPoiSwept) and close < open and low <= bullPoiTop and high >= bullPoiBot
-    if not na(longC1Line)
-        line.delete(longC1Line)
-    if not na(longC1PendingLabel)
-        label.delete(longC1PendingLabel)
-        longC1PendingLabel := na
-    longC1Open := open
-    longC1Close := close
-    longC1Bar := bar_index
-    longC1Set := true
-    if showC1Line
-        longC1Line := line.new(bar_index, median(open, close), bar_index + 1, median(open, close), xloc = xloc.bar_index, color = longColor, style = line.style_dotted, width = 1)
-    if showLabels
-        longC1PendingLabel := f_label(bar_index, low - tagOffset, "C1", longColor)
+// new C1: bearish candle whose range touches (even by 1 pip) any active, non-mitigated
+// bullish FVG (not just the newest) — must come after that FVG's own 3-candle
+// formation, and if the FVG was already used once, only counts again after a
+// swing low has been swept in it. If several zones qualify on the same bar,
+// the most recently formed one wins (the array is oldest-first).
+if close < open
+    for z in bullFvgs
+        if bar_index > z.formBar and (not z.used or z.swept) and low <= z.top and high >= z.bot
+            if not na(longC1Line)
+                line.delete(longC1Line)
+            if not na(longC1PendingLabel)
+                label.delete(longC1PendingLabel)
+                longC1PendingLabel := na
+            longC1Open := open
+            longC1Close := close
+            longC1Bar := bar_index
+            longC1Set := true
+            longC1Zone := z
+            z.touched := true
+            if na(z.boxRef) and showFvgBox
+                z.boxRef := box.new(z.leftBar, z.top, bar_index + 2, z.bot, border_color = na, bgcolor = bullPoiColor)
+            if showC1Line
+                longC1Line := line.new(bar_index, median(open, close), bar_index + 1, median(open, close), xloc = xloc.bar_index, color = longColor, style = line.style_dotted, width = 1)
+            if showLabels
+                longC1PendingLabel := f_label(bar_index, low - tagOffset, "C1", longColor)
 
 if longC1Set and showC1Line and not na(longC1Line)
     line.set_x2(longC1Line, bar_index + 1)
@@ -268,8 +263,9 @@ if longEntryEvent
     if unit > 0
         x1 = longC2Bar
         longSl2Level := longC2Close - 2.0 * unit
-        bullPoiUsed := true
-        bullPoiSwept := false
+        if not na(longC1Zone)
+            longC1Zone.used := true
+            longC1Zone.swept := false
         if showLabels
             longC2Label := f_label(longC2Bar, low - tagOffset, "C2", longColor)
             longC3Label := f_label(x1 + 1, low - tagOffset, "C3", longColor)
@@ -302,6 +298,7 @@ var int   shortC1Bar   = na
 var line  shortC1Line  = na
 var label shortC1PendingLabel   = na
 var label shortC1ConfirmedLabel = na
+var FvgZone shortC1Zone = na  // which FVG zone this C1 came from
 
 var float shortEntry     = na
 var float shortC2Open    = na
@@ -320,20 +317,6 @@ var array<label> shortTpLabels = array.new_label()
 
 shortEntryEvent = false
 
-// a fresher FVG just formed -> drop any still-unconfirmed pending C1 search tied
-// to the superseded FVG. An already-triggered/confirmed setup is NOT touched
-// here — it only ever gets replaced by a newly *confirmed* setup, or removed
-// by the invalidation rules below, never just because a new FVG appeared
-// (a fresh FVG forms constantly right after a good entry keeps running).
-if bearFvg and shortC1Set
-    shortC1Set := false
-    if not na(shortC1Line)
-        line.delete(shortC1Line)
-        shortC1Line := na
-    if not na(shortC1PendingLabel)
-        label.delete(shortC1PendingLabel)
-        shortC1PendingLabel := na
-
 if shortC1Set and bar_index == shortC1Bar + 1
     if close < open and close < median(shortC1Open, shortC1Close)
         shortC2Open := open
@@ -349,23 +332,31 @@ if shortC1Set and bar_index == shortC1Bar + 1
         label.delete(shortC1PendingLabel)
         shortC1PendingLabel := na
 
-// new C1: bullish candle whose range touches (even by 1 pip) the active, non-mitigated bearish FVG
-// — must come strictly after the FVG's own 3-candle formation, never be part of it
-// — if the FVG was already used once, it only counts again after a swing high has been swept in it
-if not bearPoiMitigated and not na(bearPoiBot) and bar_index > bearPoiFormBar and (not bearPoiUsed or bearPoiSwept) and close > open and high >= bearPoiBot and low <= bearPoiTop
-    if not na(shortC1Line)
-        line.delete(shortC1Line)
-    if not na(shortC1PendingLabel)
-        label.delete(shortC1PendingLabel)
-        shortC1PendingLabel := na
-    shortC1Open := open
-    shortC1Close := close
-    shortC1Bar := bar_index
-    shortC1Set := true
-    if showC1Line
-        shortC1Line := line.new(bar_index, median(open, close), bar_index + 1, median(open, close), xloc = xloc.bar_index, color = shortColor, style = line.style_dotted, width = 1)
-    if showLabels
-        shortC1PendingLabel := f_label(bar_index, high + tagOffset, "C1", shortColor)
+// new C1: bullish candle whose range touches (even by 1 pip) any active, non-mitigated
+// bearish FVG (not just the newest) — must come after that FVG's own 3-candle
+// formation, and if the FVG was already used once, only counts again after a
+// swing high has been swept in it. If several zones qualify on the same bar,
+// the most recently formed one wins (the array is oldest-first).
+if close > open
+    for z in bearFvgs
+        if bar_index > z.formBar and (not z.used or z.swept) and high >= z.bot and low <= z.top
+            if not na(shortC1Line)
+                line.delete(shortC1Line)
+            if not na(shortC1PendingLabel)
+                label.delete(shortC1PendingLabel)
+                shortC1PendingLabel := na
+            shortC1Open := open
+            shortC1Close := close
+            shortC1Bar := bar_index
+            shortC1Set := true
+            shortC1Zone := z
+            z.touched := true
+            if na(z.boxRef) and showFvgBox
+                z.boxRef := box.new(z.leftBar, z.top, bar_index + 2, z.bot, border_color = na, bgcolor = bearPoiColor)
+            if showC1Line
+                shortC1Line := line.new(bar_index, median(open, close), bar_index + 1, median(open, close), xloc = xloc.bar_index, color = shortColor, style = line.style_dotted, width = 1)
+            if showLabels
+                shortC1PendingLabel := f_label(bar_index, high + tagOffset, "C1", shortColor)
 
 if shortC1Set and showC1Line and not na(shortC1Line)
     line.set_x2(shortC1Line, bar_index + 1)
@@ -404,8 +395,9 @@ if shortEntryEvent
     if unit < 0
         x1 = shortC2Bar
         shortSl2Level := shortC2Close - 2.0 * unit
-        bearPoiUsed := true
-        bearPoiSwept := false
+        if not na(shortC1Zone)
+            shortC1Zone.used := true
+            shortC1Zone.swept := false
         if showLabels
             shortC2Label := f_label(shortC2Bar, high + tagOffset, "C2", shortColor)
             shortC3Label := f_label(x1 + 1, high + tagOffset, "C3", shortColor)
