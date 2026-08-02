@@ -204,10 +204,13 @@ if longC1Set and bar_index == longC1Bar + 1
 // new C1: bearish candle whose range touches (even by 1 pip) any active, non-mitigated
 // bullish FVG (not just the newest) — must come after that FVG's own 3-candle
 // formation, and if the FVG was already used once, only counts again after a
-// swing low has been swept in it. If several zones qualify on the same bar,
-// the most recently formed one wins (the array is oldest-first).
-if close < open
-    for z in bullFvgs
+// swing low has been swept in it. Iterate newest-first and stop at the first
+// match, so only ONE zone (the most recently formed qualifying one) is ever
+// marked touched / gets a box — otherwise every matching zone in the stack
+// would light up at once.
+if close < open and array.size(bullFvgs) > 0
+    for i = array.size(bullFvgs) - 1 to 0
+        z = array.get(bullFvgs, i)
         if bar_index > z.formBar and (not z.used or z.swept) and low <= z.top and high >= z.bot
             if not na(longC1Line)
                 line.delete(longC1Line)
@@ -226,6 +229,7 @@ if close < open
                 longC1Line := line.new(bar_index, median(open, close), bar_index + 1, median(open, close), xloc = xloc.bar_index, color = longColor, style = line.style_dotted, width = 1)
             if showLabels
                 longC1PendingLabel := f_label(bar_index, low - tagOffset, "C1", longColor)
+            break
 
 if longC1Set and showC1Line and not na(longC1Line)
     line.set_x2(longC1Line, bar_index + 1)
@@ -339,10 +343,13 @@ if shortC1Set and bar_index == shortC1Bar + 1
 // new C1: bullish candle whose range touches (even by 1 pip) any active, non-mitigated
 // bearish FVG (not just the newest) — must come after that FVG's own 3-candle
 // formation, and if the FVG was already used once, only counts again after a
-// swing high has been swept in it. If several zones qualify on the same bar,
-// the most recently formed one wins (the array is oldest-first).
-if close > open
-    for z in bearFvgs
+// swing high has been swept in it. Iterate newest-first and stop at the first
+// match, so only ONE zone (the most recently formed qualifying one) is ever
+// marked touched / gets a box — otherwise every matching zone in the stack
+// would light up at once.
+if close > open and array.size(bearFvgs) > 0
+    for i = array.size(bearFvgs) - 1 to 0
+        z = array.get(bearFvgs, i)
         if bar_index > z.formBar and (not z.used or z.swept) and high >= z.bot and low <= z.top
             if not na(shortC1Line)
                 line.delete(shortC1Line)
@@ -361,6 +368,7 @@ if close > open
                 shortC1Line := line.new(bar_index, median(open, close), bar_index + 1, median(open, close), xloc = xloc.bar_index, color = shortColor, style = line.style_dotted, width = 1)
             if showLabels
                 shortC1PendingLabel := f_label(bar_index, high + tagOffset, "C1", shortColor)
+            break
 
 if shortC1Set and showC1Line and not na(shortC1Line)
     line.set_x2(shortC1Line, bar_index + 1)
