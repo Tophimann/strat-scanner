@@ -414,19 +414,14 @@ while i_s2 >= 0
 // MITIGATION — a zone is only mitigated once a candle's BODY closes beyond
 // its far boundary, fully enclosing/covering the FVG (a wick alone is not
 // enough). Runs AFTER C1 detection so a candle that qualifies as C1 still
-// gets to register first. A zone with a still-PENDING C1 (c1Set = true) is
-// held back from removal for one more bar even if this same candle's close
-// already qualifies as mitigation — otherwise a candle that both touches the
-// zone (registering C1) and closes beyond it (mitigating it) in the same bar
-// would erase the zone before the next bar ever gets to validate/invalidate
-// that C1, silently losing the setup. Once the pending C1 resolves (next
-// bar), mitigation is re-evaluated against that bar's own close and the zone
-// is removed then if still applicable.
+// gets to register first; only from the *next* bar onward is a mitigated
+// zone actually gone. A fully mitigated FVG is invalid — no exception for a
+// still-pending C1.
 // ============================================================================
 i_bull = array.size(bullFvgs) - 1
 while i_bull >= 0
     zM = array.get(bullFvgs, i_bull)
-    if close < zM.bot and not zM.c1Set
+    if close < zM.bot
         if not na(zM.boxRef)
             box.delete(zM.boxRef)
         if not na(zM.c1Line)
@@ -439,7 +434,7 @@ while i_bull >= 0
 i_bear = array.size(bearFvgs) - 1
 while i_bear >= 0
     zM = array.get(bearFvgs, i_bear)
-    if close > zM.top and not zM.c1Set
+    if close > zM.top
         if not na(zM.boxRef)
             box.delete(zM.boxRef)
         if not na(zM.c1Line)
