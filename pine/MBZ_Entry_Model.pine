@@ -31,6 +31,7 @@ shortEnabled = directionFilter != "Nur Bullish"
 
 showLabels = input.bool(true, "C1/C2/Entry Labels anzeigen", group = "Anzeige")
 debugAllZones = input.bool(false, "Debug: ALLE FVG-Zonen als Box anzeigen (auch pending C1)", group = "Anzeige")
+debugValidation = input.bool(false, "Debug: C2-Validierungs-Info anzeigen", group = "Anzeige")
 
 // ============================================================================
 // HELPERS
@@ -182,6 +183,8 @@ if longEnabled
     for z in bullFvgs
         if z.c1Set and bar_index == z.c1Bar + 1
             validated = close > open and close > median(z.c1Open, z.c1Close)
+            if debugValidation
+                label.new(bar_index, high + tagOffset * 3, "V-long: " + str.tostring(validated) + "\nclose=" + str.tostring(close, format.mintick) + " open=" + str.tostring(open, format.mintick) + "\nc1Open=" + str.tostring(z.c1Open, format.mintick) + " c1Close=" + str.tostring(z.c1Close, format.mintick) + "\nmed=" + str.tostring(median(z.c1Open, z.c1Close), format.mintick) + " zoneTop=" + str.tostring(z.top, format.mintick) + " zoneBot=" + str.tostring(z.bot, format.mintick), xloc = xloc.bar_index, style = label.style_none, color = color.new(color.yellow, 100), textcolor = color.yellow, size = size.small)
             if validated
                 newLongC2Open := open
                 newLongC2Close := close
@@ -218,6 +221,8 @@ if longEnabled
                     z.c1Line := line.new(bar_index, median(open, close), bar_index + 1, median(open, close), xloc = xloc.bar_index, color = longColor, style = line.style_dotted, width = 1)
                 if showLabels
                     z.c1PendingLabel := f_label(bar_index, low - tagOffset, "C1", longColor)
+                if debugValidation
+                    label.new(bar_index, low - tagOffset * 5, "C1-long reg, formBar=" + str.tostring(z.formBar) + "\ntop=" + str.tostring(z.top, format.mintick) + " bot=" + str.tostring(z.bot, format.mintick), xloc = xloc.bar_index, style = label.style_none, color = color.new(color.aqua, 100), textcolor = color.aqua, size = size.small)
 
     for z in bullFvgs
         if z.c1Set and showC1Line and not na(z.c1Line)
@@ -285,6 +290,8 @@ if shortEnabled
     for z in bearFvgs
         if z.c1Set and bar_index == z.c1Bar + 1
             validated = close < open and close < median(z.c1Open, z.c1Close)
+            if debugValidation
+                label.new(bar_index, low - tagOffset * 3, "V-short: " + str.tostring(validated) + "\nclose=" + str.tostring(close, format.mintick) + " open=" + str.tostring(open, format.mintick) + "\nc1Open=" + str.tostring(z.c1Open, format.mintick) + " c1Close=" + str.tostring(z.c1Close, format.mintick) + "\nmed=" + str.tostring(median(z.c1Open, z.c1Close), format.mintick) + " zoneTop=" + str.tostring(z.top, format.mintick) + " zoneBot=" + str.tostring(z.bot, format.mintick), xloc = xloc.bar_index, style = label.style_none, color = color.new(color.yellow, 100), textcolor = color.yellow, size = size.small)
             if validated
                 newShortC2Open := open
                 newShortC2Close := close
@@ -321,6 +328,8 @@ if shortEnabled
                     z.c1Line := line.new(bar_index, median(open, close), bar_index + 1, median(open, close), xloc = xloc.bar_index, color = shortColor, style = line.style_dotted, width = 1)
                 if showLabels
                     z.c1PendingLabel := f_label(bar_index, high + tagOffset, "C1", shortColor)
+                if debugValidation
+                    label.new(bar_index, high + tagOffset * 5, "C1-short reg, formBar=" + str.tostring(z.formBar) + "\ntop=" + str.tostring(z.top, format.mintick) + " bot=" + str.tostring(z.bot, format.mintick), xloc = xloc.bar_index, style = label.style_none, color = color.new(color.aqua, 100), textcolor = color.aqua, size = size.small)
 
     for z in bearFvgs
         if z.c1Set and showC1Line and not na(z.c1Line)
