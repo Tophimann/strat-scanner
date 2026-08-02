@@ -552,17 +552,19 @@ if shortEntryEvent
 
 // ============================================================================
 // FVG BOX LIFECYCLE — only the newest zone, or the zone currently backing a
-// still-pending C1 / a still-alive confirmed setup, keeps a visible box.
+// still-alive confirmed setup, keeps a visible box. A zone whose C1 is only
+// pending (C2 hasn't formed/validated yet) shows NO box — the box only
+// appears once C1 is "complete", i.e. while C2 is forming/validated.
 // Every other zone (old, already resolved one way or another — success,
 // failure or invalidation) is decluttered. Runs last so longZoneBox /
 // shortZoneBox already reflect this bar's confirmations and invalidations.
 // ============================================================================
-longZoneLive   = longC1Set or not na(longZoneBox)
-shortZoneLive  = shortC1Set or not na(shortZoneBox)
-longC1FormBar = na
+longZoneLive   = not na(longZoneBox)
+shortZoneLive  = not na(shortZoneBox)
+int longC1FormBar = na
 if longZoneLive and not na(longC1Zone)
     longC1FormBar := longC1Zone.formBar
-shortC1FormBar = na
+int shortC1FormBar = na
 if shortZoneLive and not na(shortC1Zone)
     shortC1FormBar := shortC1Zone.formBar
 
