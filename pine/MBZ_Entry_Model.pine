@@ -67,7 +67,6 @@ type FvgZone
     float bot
     int   leftBar
     int   formBar
-    bool  touched   // a C1 has fired on this zone at least once — keeps its box alive
     bool  used      // this zone already produced a confirmed setup
     bool  swept     // a swing point formed after that use has since been swept in it
     float lastSwing
@@ -97,39 +96,9 @@ while i_bear >= 0
 
 // register a newly formed FVG — added to the list, older non-mitigated ones are kept
 if bullFvg
-    array.push(bullFvgs, FvgZone.new(low, high[2], bar_index[2], bar_index, false, false, false, na, na))
+    array.push(bullFvgs, FvgZone.new(low, high[2], bar_index[2], bar_index, false, false, na, na))
 if bearFvg
-    array.push(bearFvgs, FvgZone.new(low[2], high, bar_index[2], bar_index, false, false, false, na, na))
-
-// box lifecycle: the newest zone always has a box; any other zone keeps its
-// box only if it has been touched by a C1 — otherwise it's decluttered
-if array.size(bullFvgs) > 0
-    lastIdxBull = array.size(bullFvgs) - 1
-    newestBull = array.get(bullFvgs, lastIdxBull)
-    if na(newestBull.boxRef) and showFvgBox
-        newestBull.boxRef := box.new(newestBull.leftBar, newestBull.top, bar_index + 2, newestBull.bot, border_color = na, bgcolor = bullPoiColor)
-    for i = 0 to lastIdxBull
-        z = array.get(bullFvgs, i)
-        if not na(z.boxRef)
-            if i == lastIdxBull or z.touched
-                box.set_right(z.boxRef, bar_index + 2)
-            else
-                box.delete(z.boxRef)
-                z.boxRef := na
-
-if array.size(bearFvgs) > 0
-    lastIdxBear = array.size(bearFvgs) - 1
-    newestBear = array.get(bearFvgs, lastIdxBear)
-    if na(newestBear.boxRef) and showFvgBox
-        newestBear.boxRef := box.new(newestBear.leftBar, newestBear.top, bar_index + 2, newestBear.bot, border_color = na, bgcolor = bearPoiColor)
-    for i = 0 to lastIdxBear
-        z = array.get(bearFvgs, i)
-        if not na(z.boxRef)
-            if i == lastIdxBear or z.touched
-                box.set_right(z.boxRef, bar_index + 2)
-            else
-                box.delete(z.boxRef)
-                z.boxRef := na
+    array.push(bearFvgs, FvgZone.new(low[2], high, bar_index[2], bar_index, false, false, na, na))
 
 // ============================================================================
 // SWING POINTS — gate FVG *reuse* per zone: once a zone already produced a
@@ -222,9 +191,6 @@ if close < open and array.size(bullFvgs) > 0
             longC1Bar := bar_index
             longC1Set := true
             longC1Zone := z
-            z.touched := true
-            if na(z.boxRef) and showFvgBox
-                z.boxRef := box.new(z.leftBar, z.top, bar_index + 2, z.bot, border_color = na, bgcolor = bullPoiColor)
             if showC1Line
                 longC1Line := line.new(bar_index, median(open, close), bar_index + 1, median(open, close), xloc = xloc.bar_index, color = longColor, style = line.style_dotted, width = 1)
             if showLabels
@@ -361,9 +327,6 @@ if close > open and array.size(bearFvgs) > 0
             shortC1Bar := bar_index
             shortC1Set := true
             shortC1Zone := z
-            z.touched := true
-            if na(z.boxRef) and showFvgBox
-                z.boxRef := box.new(z.leftBar, z.top, bar_index + 2, z.bot, border_color = na, bgcolor = bearPoiColor)
             if showC1Line
                 shortC1Line := line.new(bar_index, median(open, close), bar_index + 1, median(open, close), xloc = xloc.bar_index, color = shortColor, style = line.style_dotted, width = 1)
             if showLabels
@@ -586,6 +549,50 @@ if shortEntryEvent
     f_clearLabels(longSlLabels)
     f_clearLines(longTpLines)
     f_clearLabels(longTpLabels)
+
+// ============================================================================
+// FVG BOX LIFECYCLE — only the newest zone, or the zone currently backing a
+// still-pending C1 / a still-alive confirmed setup, keeps a visible box.
+// Every other zone (old, already resolved one way or another — success,
+// failure or invalidation) is decluttered. Runs last so longZoneBox /
+// shortZoneBox already reflect this bar's confirmations and invalidations.
+// ============================================================================
+longZoneLive   = longC1Set or not na(longZoneBox)
+shortZoneLive  = shortC1Set or not na(shortZoneBox)
+longC1FormBar = na
+if longZoneLive and not na(longC1Zone)
+    longC1FormBar := longC1Zone.formBar
+shortC1FormBar = na
+if shortZoneLive and not na(shortC1Zone)
+    shortC1FormBar := shortC1Zone.formBar
+
+if array.size(bullFvgs) > 0
+    lastIdxBull = array.size(bullFvgs) - 1
+    for i = 0 to lastIdxBull
+        z = array.get(bullFvgs, i)
+        keepBull = i == lastIdxBull or (not na(longC1FormBar) and z.formBar == longC1FormBar)
+        if keepBull
+            if na(z.boxRef) and showFvgBox
+                z.boxRef := box.new(z.leftBar, z.top, bar_index + 2, z.bot, border_color = na, bgcolor = bullPoiColor)
+            else if not na(z.boxRef)
+                box.set_right(z.boxRef, bar_index + 2)
+        else if not na(z.boxRef)
+            box.delete(z.boxRef)
+            z.boxRef := na
+
+if array.size(bearFvgs) > 0
+    lastIdxBear = array.size(bearFvgs) - 1
+    for i = 0 to lastIdxBear
+        z = array.get(bearFvgs, i)
+        keepBear = i == lastIdxBear or (not na(shortC1FormBar) and z.formBar == shortC1FormBar)
+        if keepBear
+            if na(z.boxRef) and showFvgBox
+                z.boxRef := box.new(z.leftBar, z.top, bar_index + 2, z.bot, border_color = na, bgcolor = bearPoiColor)
+            else if not na(z.boxRef)
+                box.set_right(z.boxRef, bar_index + 2)
+        else if not na(z.boxRef)
+            box.delete(z.boxRef)
+            z.boxRef := na
 
 // ============================================================================
 // keep Entry/SL/TP labels pinned to the right end of their extension —
