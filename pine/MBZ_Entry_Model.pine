@@ -30,6 +30,7 @@ longEnabled  = directionFilter != "Nur Bearish"
 shortEnabled = directionFilter != "Nur Bullish"
 
 showLabels = input.bool(true, "C1/C2/Entry Labels anzeigen", group = "Anzeige")
+debugAllZones = input.bool(false, "Debug: ALLE FVG-Zonen als Box anzeigen (auch pending C1)", group = "Anzeige")
 
 // ============================================================================
 // HELPERS
@@ -461,7 +462,7 @@ if array.size(bullFvgs) > 0
     lastIdxBull = array.size(bullFvgs) - 1
     for i = 0 to lastIdxBull
         z = array.get(bullFvgs, i)
-        keepBull = i == lastIdxBull or f_formBarLive(z.formBar, longSetups)
+        keepBull = debugAllZones or i == lastIdxBull or f_formBarLive(z.formBar, longSetups)
         if keepBull
             if na(z.boxRef) and showFvgBox
                 z.boxRef := box.new(z.leftBar, z.top, bar_index + 2, z.bot, border_color = na, bgcolor = bullPoiColor)
@@ -475,7 +476,7 @@ if array.size(bearFvgs) > 0
     lastIdxBear = array.size(bearFvgs) - 1
     for i = 0 to lastIdxBear
         z = array.get(bearFvgs, i)
-        keepBear = i == lastIdxBear or f_formBarLive(z.formBar, shortSetups)
+        keepBear = debugAllZones or i == lastIdxBear or f_formBarLive(z.formBar, shortSetups)
         if keepBear
             if na(z.boxRef) and showFvgBox
                 z.boxRef := box.new(z.leftBar, z.top, bar_index + 2, z.bot, border_color = na, bgcolor = bearPoiColor)
