@@ -104,24 +104,28 @@ if bearFvg
 // box lifecycle: the newest zone always has a box; any other zone keeps its
 // box only if it has been touched by a C1 — otherwise it's decluttered
 if array.size(bullFvgs) > 0
-    newestBull = array.get(bullFvgs, array.size(bullFvgs) - 1)
+    lastIdxBull = array.size(bullFvgs) - 1
+    newestBull = array.get(bullFvgs, lastIdxBull)
     if na(newestBull.boxRef) and showFvgBox
         newestBull.boxRef := box.new(newestBull.leftBar, newestBull.top, bar_index + 2, newestBull.bot, border_color = na, bgcolor = bullPoiColor)
-    for z in bullFvgs
+    for i = 0 to lastIdxBull
+        z = array.get(bullFvgs, i)
         if not na(z.boxRef)
-            if z == newestBull or z.touched
+            if i == lastIdxBull or z.touched
                 box.set_right(z.boxRef, bar_index + 2)
             else
                 box.delete(z.boxRef)
                 z.boxRef := na
 
 if array.size(bearFvgs) > 0
-    newestBear = array.get(bearFvgs, array.size(bearFvgs) - 1)
+    lastIdxBear = array.size(bearFvgs) - 1
+    newestBear = array.get(bearFvgs, lastIdxBear)
     if na(newestBear.boxRef) and showFvgBox
         newestBear.boxRef := box.new(newestBear.leftBar, newestBear.top, bar_index + 2, newestBear.bot, border_color = na, bgcolor = bearPoiColor)
-    for z in bearFvgs
+    for i = 0 to lastIdxBear
+        z = array.get(bearFvgs, i)
         if not na(z.boxRef)
-            if z == newestBear or z.touched
+            if i == lastIdxBear or z.touched
                 box.set_right(z.boxRef, bar_index + 2)
             else
                 box.delete(z.boxRef)
