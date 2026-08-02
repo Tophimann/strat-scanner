@@ -134,6 +134,7 @@ var float longEntry     = na
 var float longC2Open    = na
 var float longC2Close   = na
 var int   longC2Bar     = na
+var float longSl2Level  = na  // price of the "SL 2" reference level — hitting it kills the setup
 var label longC2Label   = na
 var label longC3Label   = na
 var box   longZoneBox   = na
@@ -252,6 +253,7 @@ if longEntryEvent
     unit = longC2Close - longC2Open
     if unit > 0
         x1 = longC2Bar
+        longSl2Level := longC2Close - 2.0 * unit
         if showLabels
             longC2Label := f_label(longC2Bar, low - tagOffset, "C2", longColor)
             longC3Label := f_label(x1 + 1, low - tagOffset, "C3", longColor)
@@ -289,6 +291,7 @@ var float shortEntry     = na
 var float shortC2Open    = na
 var float shortC2Close   = na
 var int   shortC2Bar     = na
+var float shortSl2Level  = na  // price of the "SL 2" reference level — hitting it kills the setup
 var label shortC2Label   = na
 var label shortC3Label   = na
 var box   shortZoneBox   = na
@@ -403,6 +406,7 @@ if shortEntryEvent
     unit = shortC2Close - shortC2Open // negative for a bearish C2
     if unit < 0
         x1 = shortC2Bar
+        shortSl2Level := shortC2Close - 2.0 * unit
         if showLabels
             shortC2Label := f_label(shortC2Bar, high + tagOffset, "C2", shortColor)
             shortC3Label := f_label(x1 + 1, high + tagOffset, "C3", shortColor)
@@ -426,8 +430,9 @@ if shortEntryEvent
                     array.push(shortTpLabels, f_label(f_x2(x1), lvl, "TP " + str.tostring(-n) + " (" + str.tostring(lvl, format.mintick) + ")", tpColor))
 
 // ============================================================================
-// INVALIDATION — C3 (the candle right after C2) never traded back into the
-// entry (0.5 of C2). Once C4 forms, the whole setup is dead: remove it.
+// INVALIDATION
+// Rule 1: C3 (the candle right after C2) never traded back into the entry
+// (0.5 of C2). Once C4 forms, the whole setup is dead: remove it.
 // ============================================================================
 if not na(longZoneBox) and bar_index == longC2Bar + 2 and low[1] > longEntry
     if not na(longC1ConfirmedLabel)
@@ -454,6 +459,56 @@ if not na(longZoneBox) and bar_index == longC2Bar + 2 and low[1] > longEntry
     f_clearLabels(longTpLabels)
 
 if not na(shortZoneBox) and bar_index == shortC2Bar + 2 and high[1] < shortEntry
+    if not na(shortC1ConfirmedLabel)
+        label.delete(shortC1ConfirmedLabel)
+        shortC1ConfirmedLabel := na
+    if not na(shortC2Label)
+        label.delete(shortC2Label)
+        shortC2Label := na
+    if not na(shortC3Label)
+        label.delete(shortC3Label)
+        shortC3Label := na
+    if not na(shortZoneBox)
+        box.delete(shortZoneBox)
+        shortZoneBox := na
+    if not na(shortEntryLine)
+        line.delete(shortEntryLine)
+        shortEntryLine := na
+    if not na(shortEntryLabel)
+        label.delete(shortEntryLabel)
+        shortEntryLabel := na
+    f_clearLines(shortSlLines)
+    f_clearLabels(shortSlLabels)
+    f_clearLines(shortTpLines)
+    f_clearLabels(shortTpLabels)
+
+// INVALIDATION — price reached the "SL 2" reference level: the stop would
+// have been hit, the setup is dead, remove it.
+if not na(longZoneBox) and low <= longSl2Level
+    if not na(longC1ConfirmedLabel)
+        label.delete(longC1ConfirmedLabel)
+        longC1ConfirmedLabel := na
+    if not na(longC2Label)
+        label.delete(longC2Label)
+        longC2Label := na
+    if not na(longC3Label)
+        label.delete(longC3Label)
+        longC3Label := na
+    if not na(longZoneBox)
+        box.delete(longZoneBox)
+        longZoneBox := na
+    if not na(longEntryLine)
+        line.delete(longEntryLine)
+        longEntryLine := na
+    if not na(longEntryLabel)
+        label.delete(longEntryLabel)
+        longEntryLabel := na
+    f_clearLines(longSlLines)
+    f_clearLabels(longSlLabels)
+    f_clearLines(longTpLines)
+    f_clearLabels(longTpLabels)
+
+if not na(shortZoneBox) and high >= shortSl2Level
     if not na(shortC1ConfirmedLabel)
         label.delete(shortC1ConfirmedLabel)
         shortC1ConfirmedLabel := na
