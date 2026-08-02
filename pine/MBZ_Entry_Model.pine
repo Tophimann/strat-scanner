@@ -111,11 +111,11 @@ if bearFvg
     if showFvgBox
         bearPoiBox := box.new(bearPoiLeft, bearPoiTop, bar_index, bearPoiBot, border_color = na, bgcolor = bearPoiColor)
 
-// keep active POI boxes growing to the right until mitigated
+// keep active POI boxes growing to the right until mitigated — always 2 bars ahead of the current bar
 if showFvgBox and not na(bullPoiBox) and not bullPoiMitigated
-    box.set_right(bullPoiBox, bar_index)
+    box.set_right(bullPoiBox, bar_index + 2)
 if showFvgBox and not na(bearPoiBox) and not bearPoiMitigated
-    box.set_right(bearPoiBox, bar_index)
+    box.set_right(bearPoiBox, bar_index + 2)
 
 // ============================================================================
 // LONG SETUP (bullish FVG -> bearish C1 inside it -> bullish C2 validates)
