@@ -532,15 +532,16 @@ if shortEntryEvent
     f_clearLabels(longTpLabels)
 
 // ============================================================================
-// MITIGATION — runs AFTER C1 detection so a candle whose wick reaches all the
-// way through a zone still gets to register as C1 first; only for the *next*
-// bar onward is that zone actually gone. Drop any zone whose wick has reached
-// the far boundary.
+// MITIGATION — a zone is only mitigated once a candle's BODY closes beyond
+// its far boundary, fully enclosing/covering the FVG (a wick alone is not
+// enough). Runs AFTER C1 detection so a candle that qualifies as C1 still
+// gets to register first; only from the *next* bar onward is a mitigated
+// zone actually gone.
 // ============================================================================
 i_bull = array.size(bullFvgs) - 1
 while i_bull >= 0
     zM = array.get(bullFvgs, i_bull)
-    if low <= zM.bot
+    if close < zM.bot
         if not na(zM.boxRef)
             box.delete(zM.boxRef)
         array.remove(bullFvgs, i_bull)
@@ -549,7 +550,7 @@ while i_bull >= 0
 i_bear = array.size(bearFvgs) - 1
 while i_bear >= 0
     zM = array.get(bearFvgs, i_bear)
-    if high >= zM.top
+    if close > zM.top
         if not na(zM.boxRef)
             box.delete(zM.boxRef)
         array.remove(bearFvgs, i_bear)
