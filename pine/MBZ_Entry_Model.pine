@@ -12,7 +12,7 @@ showFvgLabel = input.bool(true, "FVG-Text (FVG+/- TF MBZ) anzeigen", group = grp
 bullFvgTextColor = input.color(color.teal, "Bullish FVG-Text Farbe", group = grpPOI)
 bearFvgTextColor = input.color(color.red, "Bearish FVG-Text Farbe", group = grpPOI)
 fvgTextH = input.string("Links", "FVG-Text horizontale Position", options = ["Links", "Mitte", "Rechts"], group = grpPOI)
-fvgTextV = input.string("Innen", "FVG-Text vertikale Position", options = ["Innen", "Außen"], group = grpPOI)
+fvgTextV = input.string("Oben", "FVG-Text vertikale Position", options = ["Oben", "Mitte", "Unten"], group = grpPOI)
 
 grpMbz = "MBZ / Entry"
 showC1Line   = input.bool(true, "C1 0.5-Linie (Validierungs-Schwelle) anzeigen", group = grpMbz)
@@ -90,7 +90,6 @@ type FvgZone
     int   c1Bar
     line  c1Line          // dotted 0.5 validation-threshold line
     label c1PendingLabel  // "C1" tag while this zone's C1 is unconfirmed
-    label fvgLabel        // "FVG+/- <TF> MBZ" tag, lives/dies with the box
 
 // one fully confirmed (C2-validated) setup's own drawings/state — several of
 // these can be alive at once per direction (see maxSetups)
@@ -142,30 +141,20 @@ f_c1Summary(zones) =>
             msg := msg + "c1Bar=" + str.tostring(z.c1Bar) + " " + str.tostring(z.top, format.mintick) + "/" + str.tostring(z.bot, format.mintick) + "\n"
     msg == "" ? "-" : msg
 
-// FVG text position: horizontal follows the box's own footprint (its left
-// edge to its current, ever-extending right edge), vertical is either inside
-// the zone (vertically centered between top/bot) or just outside it (above
-// the top boundary) — "top" is always the higher-price edge for both bull
-// and bear zones, so this works unmirrored for either direction.
-f_fvgTextX(z) =>
-    rightEdge = bar_index + 2
-    xf = switch fvgTextH
-        "Mitte"  => math.avg(z.leftBar, rightEdge)
-        "Rechts" => rightEdge
-        => z.leftBar
-    int(xf)
-
-f_fvgTextY(z) =>
-    fvgTextV == "Außen" ? z.top + tagOffset : math.avg(z.top, z.bot)
-
-// text must align AWAY from the box's open side so it stays inside the box
-// instead of overflowing past its edge — anchored at the right edge, text
-// has to extend leftward (align_right), not spill past it to the right.
-f_fvgTextAlign() =>
+// FVG text uses the box's own native text/text_halign/text_valign — Pine
+// keeps it clipped to the box bounds automatically, no manual x/y/overflow
+// handling needed.
+f_fvgTextHalign() =>
     switch fvgTextH
-        "Rechts" => text.align_right
         "Mitte"  => text.align_center
+        "Rechts" => text.align_right
         => text.align_left
+
+f_fvgTextValign() =>
+    switch fvgTextV
+        "Mitte" => text.align_center
+        "Unten" => text.align_bottom
+        => text.align_top
 
 var table dbgTable = table.new(position.top_left, 1, 6, bgcolor = color.new(color.black, 10), border_width = 1, border_color = color.gray)
 
@@ -177,9 +166,9 @@ var array<ConfirmedSetup> shortSetups = array.new<ConfirmedSetup>()
 
 // register a newly formed FVG — added to the list, older non-mitigated ones are kept
 if bullFvg and longEnabled
-    array.push(bullFvgs, FvgZone.new(low, high[2], bar_index[2], bar_index, false, false, na, na, false, na, na, na, na, na, na))
+    array.push(bullFvgs, FvgZone.new(low, high[2], bar_index[2], bar_index, false, false, na, na, false, na, na, na, na, na))
 if bearFvg and shortEnabled
-    array.push(bearFvgs, FvgZone.new(low[2], high, bar_index[2], bar_index, false, false, na, na, false, na, na, na, na, na, na))
+    array.push(bearFvgs, FvgZone.new(low[2], high, bar_index[2], bar_index, false, false, na, na, false, na, na, na, na, na))
 
 // ============================================================================
 // SWING POINTS — gate FVG *reuse* per zone: once a zone already produced a
@@ -469,8 +458,6 @@ while i_bull >= 0
             line.delete(zM.c1Line)
         if not na(zM.c1PendingLabel)
             label.delete(zM.c1PendingLabel)
-        if not na(zM.fvgLabel)
-            label.delete(zM.fvgLabel)
         array.remove(bullFvgs, i_bull)
     i_bull -= 1
 
@@ -484,8 +471,6 @@ while i_bear >= 0
             line.delete(zM.c1Line)
         if not na(zM.c1PendingLabel)
             label.delete(zM.c1PendingLabel)
-        if not na(zM.fvgLabel)
-            label.delete(zM.fvgLabel)
         array.remove(bearFvgs, i_bear)
     i_bear -= 1
 
@@ -505,23 +490,12 @@ if array.size(bullFvgs) > 0
         keepBull = debugAllZones or i == lastIdxBull or f_formBarLive(z.formBar, longSetups)
         if keepBull
             if na(z.boxRef) and showFvgBox
-                z.boxRef := box.new(z.leftBar, z.top, bar_index + 2, z.bot, border_color = na, bgcolor = bullPoiColor)
+                z.boxRef := box.new(z.leftBar, z.top, bar_index + 2, z.bot, border_color = na, bgcolor = bullPoiColor, text = showFvgLabel ? "FVG+ " + timeframe.period + " MBZ" : "", text_size = size.small, text_color = bullFvgTextColor, text_halign = f_fvgTextHalign(), text_valign = f_fvgTextValign(), text_wrap = text.wrap_none)
             else if not na(z.boxRef)
                 box.set_right(z.boxRef, bar_index + 2)
-            if showFvgLabel
-                if na(z.fvgLabel)
-                    z.fvgLabel := label.new(f_fvgTextX(z), f_fvgTextY(z), "FVG+ " + timeframe.period + " MBZ", xloc = xloc.bar_index, style = label.style_none, color = color.new(bullFvgTextColor, 100), textcolor = bullFvgTextColor, size = size.small, textalign = f_fvgTextAlign())
-                else
-                    label.set_xy(z.fvgLabel, f_fvgTextX(z), f_fvgTextY(z))
-            else if not na(z.fvgLabel)
-                label.delete(z.fvgLabel)
-                z.fvgLabel := na
         else if not na(z.boxRef)
             box.delete(z.boxRef)
             z.boxRef := na
-            if not na(z.fvgLabel)
-                label.delete(z.fvgLabel)
-                z.fvgLabel := na
 
 if array.size(bearFvgs) > 0
     lastIdxBear = array.size(bearFvgs) - 1
@@ -530,23 +504,12 @@ if array.size(bearFvgs) > 0
         keepBear = debugAllZones or i == lastIdxBear or f_formBarLive(z.formBar, shortSetups)
         if keepBear
             if na(z.boxRef) and showFvgBox
-                z.boxRef := box.new(z.leftBar, z.top, bar_index + 2, z.bot, border_color = na, bgcolor = bearPoiColor)
+                z.boxRef := box.new(z.leftBar, z.top, bar_index + 2, z.bot, border_color = na, bgcolor = bearPoiColor, text = showFvgLabel ? "FVG- " + timeframe.period + " MBZ" : "", text_size = size.small, text_color = bearFvgTextColor, text_halign = f_fvgTextHalign(), text_valign = f_fvgTextValign(), text_wrap = text.wrap_none)
             else if not na(z.boxRef)
                 box.set_right(z.boxRef, bar_index + 2)
-            if showFvgLabel
-                if na(z.fvgLabel)
-                    z.fvgLabel := label.new(f_fvgTextX(z), f_fvgTextY(z), "FVG- " + timeframe.period + " MBZ", xloc = xloc.bar_index, style = label.style_none, color = color.new(bearFvgTextColor, 100), textcolor = bearFvgTextColor, size = size.small, textalign = f_fvgTextAlign())
-                else
-                    label.set_xy(z.fvgLabel, f_fvgTextX(z), f_fvgTextY(z))
-            else if not na(z.fvgLabel)
-                label.delete(z.fvgLabel)
-                z.fvgLabel := na
         else if not na(z.boxRef)
             box.delete(z.boxRef)
             z.boxRef := na
-            if not na(z.fvgLabel)
-                label.delete(z.fvgLabel)
-                z.fvgLabel := na
 
 // ============================================================================
 // keep Entry/SL/TP labels pinned to the right end of their extension —
