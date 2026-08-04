@@ -11,6 +11,8 @@ bearPoiColor = input.color(color.new(color.red, 85), "Bearish FVG Farbe", group 
 showFvgLabel = input.bool(true, "FVG-Text (FVG+/- TF MBZ) anzeigen", group = grpPOI)
 bullFvgTextColor = input.color(color.teal, "Bullish FVG-Text Farbe", group = grpPOI)
 bearFvgTextColor = input.color(color.red, "Bearish FVG-Text Farbe", group = grpPOI)
+fvgTextH = input.string("Links", "FVG-Text horizontale Position", options = ["Links", "Mitte", "Rechts"], group = grpPOI)
+fvgTextV = input.string("Innen", "FVG-Text vertikale Position", options = ["Innen", "Außen"], group = grpPOI)
 
 grpMbz = "MBZ / Entry"
 showC1Line   = input.bool(true, "C1 0.5-Linie (Validierungs-Schwelle) anzeigen", group = grpMbz)
@@ -139,6 +141,22 @@ f_c1Summary(zones) =>
         if z.c1Set
             msg := msg + "c1Bar=" + str.tostring(z.c1Bar) + " " + str.tostring(z.top, format.mintick) + "/" + str.tostring(z.bot, format.mintick) + "\n"
     msg == "" ? "-" : msg
+
+// FVG text position: horizontal follows the box's own footprint (its left
+// edge to its current, ever-extending right edge), vertical is either inside
+// the zone (vertically centered between top/bot) or just outside it (above
+// the top boundary) — "top" is always the higher-price edge for both bull
+// and bear zones, so this works unmirrored for either direction.
+f_fvgTextX(z) =>
+    rightEdge = bar_index + 2
+    xf = switch fvgTextH
+        "Mitte"  => math.avg(z.leftBar, rightEdge)
+        "Rechts" => rightEdge
+        => z.leftBar
+    int(xf)
+
+f_fvgTextY(z) =>
+    fvgTextV == "Außen" ? z.top + tagOffset : math.avg(z.top, z.bot)
 
 var table dbgTable = table.new(position.top_left, 1, 6, bgcolor = color.new(color.black, 10), border_width = 1, border_color = color.gray)
 
@@ -481,8 +499,14 @@ if array.size(bullFvgs) > 0
                 z.boxRef := box.new(z.leftBar, z.top, bar_index + 2, z.bot, border_color = na, bgcolor = bullPoiColor)
             else if not na(z.boxRef)
                 box.set_right(z.boxRef, bar_index + 2)
-            if na(z.fvgLabel) and showFvgLabel
-                z.fvgLabel := f_label(z.leftBar, z.top, "FVG+ " + timeframe.period + " MBZ", bullFvgTextColor)
+            if showFvgLabel
+                if na(z.fvgLabel)
+                    z.fvgLabel := f_label(f_fvgTextX(z), f_fvgTextY(z), "FVG+ " + timeframe.period + " MBZ", bullFvgTextColor)
+                else
+                    label.set_xy(z.fvgLabel, f_fvgTextX(z), f_fvgTextY(z))
+            else if not na(z.fvgLabel)
+                label.delete(z.fvgLabel)
+                z.fvgLabel := na
         else if not na(z.boxRef)
             box.delete(z.boxRef)
             z.boxRef := na
@@ -500,8 +524,14 @@ if array.size(bearFvgs) > 0
                 z.boxRef := box.new(z.leftBar, z.top, bar_index + 2, z.bot, border_color = na, bgcolor = bearPoiColor)
             else if not na(z.boxRef)
                 box.set_right(z.boxRef, bar_index + 2)
-            if na(z.fvgLabel) and showFvgLabel
-                z.fvgLabel := f_label(z.leftBar, z.top, "FVG- " + timeframe.period + " MBZ", bearFvgTextColor)
+            if showFvgLabel
+                if na(z.fvgLabel)
+                    z.fvgLabel := f_label(f_fvgTextX(z), f_fvgTextY(z), "FVG- " + timeframe.period + " MBZ", bearFvgTextColor)
+                else
+                    label.set_xy(z.fvgLabel, f_fvgTextX(z), f_fvgTextY(z))
+            else if not na(z.fvgLabel)
+                label.delete(z.fvgLabel)
+                z.fvgLabel := na
         else if not na(z.boxRef)
             box.delete(z.boxRef)
             z.boxRef := na
