@@ -158,6 +158,15 @@ f_fvgTextX(z) =>
 f_fvgTextY(z) =>
     fvgTextV == "Außen" ? z.top + tagOffset : math.avg(z.top, z.bot)
 
+// text must align AWAY from the box's open side so it stays inside the box
+// instead of overflowing past its edge — anchored at the right edge, text
+// has to extend leftward (align_right), not spill past it to the right.
+f_fvgTextAlign() =>
+    switch fvgTextH
+        "Rechts" => text.align_right
+        "Mitte"  => text.align_center
+        => text.align_left
+
 var table dbgTable = table.new(position.top_left, 1, 6, bgcolor = color.new(color.black, 10), border_width = 1, border_color = color.gray)
 
 var array<FvgZone> bullFvgs = array.new<FvgZone>()
@@ -501,7 +510,7 @@ if array.size(bullFvgs) > 0
                 box.set_right(z.boxRef, bar_index + 2)
             if showFvgLabel
                 if na(z.fvgLabel)
-                    z.fvgLabel := f_label(f_fvgTextX(z), f_fvgTextY(z), "FVG+ " + timeframe.period + " MBZ", bullFvgTextColor)
+                    z.fvgLabel := label.new(f_fvgTextX(z), f_fvgTextY(z), "FVG+ " + timeframe.period + " MBZ", xloc = xloc.bar_index, style = label.style_none, color = color.new(bullFvgTextColor, 100), textcolor = bullFvgTextColor, size = size.small, textalign = f_fvgTextAlign())
                 else
                     label.set_xy(z.fvgLabel, f_fvgTextX(z), f_fvgTextY(z))
             else if not na(z.fvgLabel)
@@ -526,7 +535,7 @@ if array.size(bearFvgs) > 0
                 box.set_right(z.boxRef, bar_index + 2)
             if showFvgLabel
                 if na(z.fvgLabel)
-                    z.fvgLabel := f_label(f_fvgTextX(z), f_fvgTextY(z), "FVG- " + timeframe.period + " MBZ", bearFvgTextColor)
+                    z.fvgLabel := label.new(f_fvgTextX(z), f_fvgTextY(z), "FVG- " + timeframe.period + " MBZ", xloc = xloc.bar_index, style = label.style_none, color = color.new(bearFvgTextColor, 100), textcolor = bearFvgTextColor, size = size.small, textalign = f_fvgTextAlign())
                 else
                     label.set_xy(z.fvgLabel, f_fvgTextX(z), f_fvgTextY(z))
             else if not na(z.fvgLabel)
