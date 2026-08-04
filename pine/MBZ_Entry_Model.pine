@@ -170,7 +170,10 @@ f_c1Summary(zones) =>
     msg = ""
     for z in zones
         if z.c1Set
-            msg := msg + "c1Bar=" + str.tostring(z.c1Bar) + " " + str.tostring(z.top, format.mintick) + "/" + str.tostring(z.bot, format.mintick) + "\n"
+            msg := msg + "PENDING c1Bar=" + str.tostring(z.c1Bar) + " " + str.tostring(z.top, format.mintick) + "/" + str.tostring(z.bot, format.mintick) + "\n"
+        if z.used and not z.swept
+            lastSwingStr = na(z.lastSwing) ? "na" : str.tostring(z.lastSwing, format.mintick)
+            msg := msg + "GATED(used,unswept) " + str.tostring(z.top, format.mintick) + "/" + str.tostring(z.bot, format.mintick) + " lastSwing=" + lastSwingStr + "\n"
     msg == "" ? "-" : msg
 
 // FVG text uses the box's own native text/text_halign/text_valign — Pine
