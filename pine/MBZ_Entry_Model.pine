@@ -8,6 +8,9 @@ grpPOI = "FVG / POI"
 showFvgBox   = input.bool(true, "FVG Box anzeigen", group = grpPOI)
 bullPoiColor = input.color(color.new(color.teal, 85), "Bullish FVG Farbe", group = grpPOI)
 bearPoiColor = input.color(color.new(color.red, 85), "Bearish FVG Farbe", group = grpPOI)
+showFvgLabel = input.bool(true, "FVG-Text (FVG+/- TF MBZ) anzeigen", group = grpPOI)
+bullFvgTextColor = input.color(color.teal, "Bullish FVG-Text Farbe", group = grpPOI)
+bearFvgTextColor = input.color(color.red, "Bearish FVG-Text Farbe", group = grpPOI)
 
 grpMbz = "MBZ / Entry"
 showC1Line   = input.bool(true, "C1 0.5-Linie (Validierungs-Schwelle) anzeigen", group = grpMbz)
@@ -85,6 +88,7 @@ type FvgZone
     int   c1Bar
     line  c1Line          // dotted 0.5 validation-threshold line
     label c1PendingLabel  // "C1" tag while this zone's C1 is unconfirmed
+    label fvgLabel        // "FVG+/- <TF> MBZ" tag, lives/dies with the box
 
 // one fully confirmed (C2-validated) setup's own drawings/state — several of
 // these can be alive at once per direction (see maxSetups)
@@ -146,9 +150,9 @@ var array<ConfirmedSetup> shortSetups = array.new<ConfirmedSetup>()
 
 // register a newly formed FVG — added to the list, older non-mitigated ones are kept
 if bullFvg and longEnabled
-    array.push(bullFvgs, FvgZone.new(low, high[2], bar_index[2], bar_index, false, false, na, na, false, na, na, na, na, na))
+    array.push(bullFvgs, FvgZone.new(low, high[2], bar_index[2], bar_index, false, false, na, na, false, na, na, na, na, na, na))
 if bearFvg and shortEnabled
-    array.push(bearFvgs, FvgZone.new(low[2], high, bar_index[2], bar_index, false, false, na, na, false, na, na, na, na, na))
+    array.push(bearFvgs, FvgZone.new(low[2], high, bar_index[2], bar_index, false, false, na, na, false, na, na, na, na, na, na))
 
 // ============================================================================
 // SWING POINTS — gate FVG *reuse* per zone: once a zone already produced a
@@ -438,6 +442,8 @@ while i_bull >= 0
             line.delete(zM.c1Line)
         if not na(zM.c1PendingLabel)
             label.delete(zM.c1PendingLabel)
+        if not na(zM.fvgLabel)
+            label.delete(zM.fvgLabel)
         array.remove(bullFvgs, i_bull)
     i_bull -= 1
 
@@ -451,6 +457,8 @@ while i_bear >= 0
             line.delete(zM.c1Line)
         if not na(zM.c1PendingLabel)
             label.delete(zM.c1PendingLabel)
+        if not na(zM.fvgLabel)
+            label.delete(zM.fvgLabel)
         array.remove(bearFvgs, i_bear)
     i_bear -= 1
 
@@ -473,9 +481,14 @@ if array.size(bullFvgs) > 0
                 z.boxRef := box.new(z.leftBar, z.top, bar_index + 2, z.bot, border_color = na, bgcolor = bullPoiColor)
             else if not na(z.boxRef)
                 box.set_right(z.boxRef, bar_index + 2)
+            if na(z.fvgLabel) and showFvgLabel
+                z.fvgLabel := f_label(z.leftBar, z.top, "FVG+ " + timeframe.period + " MBZ", bullFvgTextColor)
         else if not na(z.boxRef)
             box.delete(z.boxRef)
             z.boxRef := na
+            if not na(z.fvgLabel)
+                label.delete(z.fvgLabel)
+                z.fvgLabel := na
 
 if array.size(bearFvgs) > 0
     lastIdxBear = array.size(bearFvgs) - 1
@@ -487,9 +500,14 @@ if array.size(bearFvgs) > 0
                 z.boxRef := box.new(z.leftBar, z.top, bar_index + 2, z.bot, border_color = na, bgcolor = bearPoiColor)
             else if not na(z.boxRef)
                 box.set_right(z.boxRef, bar_index + 2)
+            if na(z.fvgLabel) and showFvgLabel
+                z.fvgLabel := f_label(z.leftBar, z.top, "FVG- " + timeframe.period + " MBZ", bearFvgTextColor)
         else if not na(z.boxRef)
             box.delete(z.boxRef)
             z.boxRef := na
+            if not na(z.fvgLabel)
+                label.delete(z.fvgLabel)
+                z.fvgLabel := na
 
 // ============================================================================
 // keep Entry/SL/TP labels pinned to the right end of their extension —
