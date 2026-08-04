@@ -24,6 +24,8 @@ extendInfinite = input.bool(true, "Level-Linien unendlich nach rechts verlänger
 projectionBars = input.int(40, "Projektionslänge (Bars), falls nicht unendlich", minval = 5, group = grpMbz)
 lvlLineStyleInput = input.string("Gestrichelt", "Linienstil (Entry/SL/TP)", options = ["Durchgezogen", "Gestrichelt", "Gepunktet"], group = grpMbz)
 lvlLineWidth = input.int(1, "Liniendicke (Entry/SL/TP)", minval = 1, maxval = 4, group = grpMbz)
+lvlTextH = input.string("Links", "Text-Ausrichtung horizontal (Entry/SL/TP)", options = ["Links", "Mitte", "Rechts"], group = grpMbz)
+lvlTextV = input.string("Auf der Linie", "Text-Ausrichtung vertikal (Entry/SL/TP)", options = ["Über der Linie", "Auf der Linie", "Unter der Linie"], group = grpMbz)
 
 longColor  = input.color(color.new(color.lime, 0), "Long Farbe", group = grpMbz)
 shortColor = input.color(color.new(color.red, 0), "Short Farbe", group = grpMbz)
@@ -74,6 +76,21 @@ f_clearLabels(arr) =>
 
 tagOffsetMult = input.float(1.0, "C1/C2 Textabstand von der Kerze (x ATR)", minval = 0, group = "Anzeige")
 tagOffset = ta.atr(14) * tagOffsetMult
+
+f_lvlTextAlign() =>
+    switch lvlTextH
+        "Mitte"  => text.align_center
+        "Rechts" => text.align_right
+        => text.align_left
+
+f_lvlTextY(_y) =>
+    switch lvlTextV
+        "Über der Linie" => _y + tagOffset
+        "Unter der Linie" => _y - tagOffset
+        => _y
+
+f_lvlLabel(_x, _y, _txt, _col) =>
+    label.new(_x, f_lvlTextY(_y), _txt, xloc = xloc.bar_index, style = label.style_none, color = color.new(_col, 100), textcolor = _col, size = size.small, textalign = f_lvlTextAlign())
 
 // ============================================================================
 // FVG DETECTION (classic 3-candle, wick based, single timeframe — chart TF)
@@ -253,19 +270,19 @@ if longEnabled
                     if showEntry
                         newSetup.entryLine := f_line(x1, entry, entry, longColor, f_lvlLineStyle(), lvlLineWidth)
                         if showLabels
-                            newSetup.entryLabel := f_label(f_x2(x1), entry, "Entry " + str.tostring(entry, format.mintick), longColor)
+                            newSetup.entryLabel := f_lvlLabel(f_x2(x1), entry, "Entry " + str.tostring(entry, format.mintick), longColor)
                     if showStopLvls
                         for n = 1.5 to 2.0 by 0.5
                             lvl = c2Close - n * unit
                             array.push(newSetup.slLines, f_line(x1, lvl, lvl, stopColor, f_lvlLineStyle(), lvlLineWidth))
                             if showLabels
-                                array.push(newSetup.slLabels, f_label(f_x2(x1), lvl, "SL " + str.tostring(n) + " (" + str.tostring(lvl, format.mintick) + ")", stopColor))
+                                array.push(newSetup.slLabels, f_lvlLabel(f_x2(x1), lvl, "SL " + str.tostring(n) + " (" + str.tostring(lvl, format.mintick) + ")", stopColor))
                     if showTpLvls
                         for n in array.from(-1.0, -2.0, -4.0, -6.0, -7.0)
                             lvl = c2Close - n * unit
                             array.push(newSetup.tpLines, f_line(x1, lvl, lvl, tpColor, f_lvlLineStyle(), lvlLineWidth))
                             if showLabels
-                                array.push(newSetup.tpLabels, f_label(f_x2(x1), lvl, "TP " + str.tostring(-n) + " (" + str.tostring(lvl, format.mintick) + ")", tpColor))
+                                array.push(newSetup.tpLabels, f_lvlLabel(f_x2(x1), lvl, "TP " + str.tostring(-n) + " (" + str.tostring(lvl, format.mintick) + ")", tpColor))
 
                     array.push(longSetups, newSetup)
                     if array.size(longSetups) > maxSetups
@@ -350,19 +367,19 @@ if shortEnabled
                     if showEntry
                         newSetup.entryLine := f_line(x1, entry, entry, shortColor, f_lvlLineStyle(), lvlLineWidth)
                         if showLabels
-                            newSetup.entryLabel := f_label(f_x2(x1), entry, "Entry " + str.tostring(entry, format.mintick), shortColor)
+                            newSetup.entryLabel := f_lvlLabel(f_x2(x1), entry, "Entry " + str.tostring(entry, format.mintick), shortColor)
                     if showStopLvls
                         for n = 1.5 to 2.0 by 0.5
                             lvl = c2Close - n * unit
                             array.push(newSetup.slLines, f_line(x1, lvl, lvl, stopColor, f_lvlLineStyle(), lvlLineWidth))
                             if showLabels
-                                array.push(newSetup.slLabels, f_label(f_x2(x1), lvl, "SL " + str.tostring(n) + " (" + str.tostring(lvl, format.mintick) + ")", stopColor))
+                                array.push(newSetup.slLabels, f_lvlLabel(f_x2(x1), lvl, "SL " + str.tostring(n) + " (" + str.tostring(lvl, format.mintick) + ")", stopColor))
                     if showTpLvls
                         for n in array.from(-1.0, -2.0, -4.0, -6.0, -7.0)
                             lvl = c2Close - n * unit
                             array.push(newSetup.tpLines, f_line(x1, lvl, lvl, tpColor, f_lvlLineStyle(), lvlLineWidth))
                             if showLabels
-                                array.push(newSetup.tpLabels, f_label(f_x2(x1), lvl, "TP " + str.tostring(-n) + " (" + str.tostring(lvl, format.mintick) + ")", tpColor))
+                                array.push(newSetup.tpLabels, f_lvlLabel(f_x2(x1), lvl, "TP " + str.tostring(-n) + " (" + str.tostring(lvl, format.mintick) + ")", tpColor))
 
                     array.push(shortSetups, newSetup)
                     if array.size(shortSetups) > maxSetups
