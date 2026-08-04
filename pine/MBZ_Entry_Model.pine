@@ -182,14 +182,17 @@ for z in bullFvgs
 longEntryEvent = false
 
 if longEnabled
-    // attempt validation on the candle immediately following each zone's own C1.
+    // attempt validation on the candle immediately following each zone's own C1,
+    // only once that candle has actually CLOSED (barstate.isconfirmed) — close
+    // is still live/changing on the forming bar, so entry/SL/TP must not appear
+    // (and potentially repaint away) before C2's close is final.
     // Each validating zone builds and pushes its OWN ConfirmedSetup right here,
     // independently — a shared "winner" variable would let a later zone in this
     // same loop silently overwrite/drop an earlier zone that validated on the
     // very same bar, which is exactly the multi-setup case this script needs to
     // support (several zones can legitimately confirm on the same candle).
     for z in bullFvgs
-        if z.c1Set and bar_index == z.c1Bar + 1
+        if z.c1Set and bar_index == z.c1Bar + 1 and barstate.isconfirmed
             validated = close > open and close > median(z.c1Open, z.c1Close)
             if debugValidation
                 table.cell(dbgTable, 0, 2, "V-long bar" + str.tostring(bar_index) + ": " + str.tostring(validated) + " close=" + str.tostring(close, format.mintick) + " open=" + str.tostring(open, format.mintick) + " c1O=" + str.tostring(z.c1Open, format.mintick) + " c1C=" + str.tostring(z.c1Close, format.mintick) + " med=" + str.tostring(median(z.c1Open, z.c1Close), format.mintick), text_color = color.yellow, text_size = size.small, text_halign = text.align_left)
@@ -287,7 +290,7 @@ if shortEnabled
     // Each validating zone builds and pushes its OWN ConfirmedSetup right here,
     // independently — see the mirrored comment in the LONG SETUP section above.
     for z in bearFvgs
-        if z.c1Set and bar_index == z.c1Bar + 1
+        if z.c1Set and bar_index == z.c1Bar + 1 and barstate.isconfirmed
             validated = close < open and close < median(z.c1Open, z.c1Close)
             if debugValidation
                 table.cell(dbgTable, 0, 3, "V-short bar" + str.tostring(bar_index) + ": " + str.tostring(validated) + " close=" + str.tostring(close, format.mintick) + " open=" + str.tostring(open, format.mintick) + " c1O=" + str.tostring(z.c1Open, format.mintick) + " c1C=" + str.tostring(z.c1Close, format.mintick) + " med=" + str.tostring(median(z.c1Open, z.c1Close), format.mintick), text_color = color.yellow, text_size = size.small, text_halign = text.align_left)
