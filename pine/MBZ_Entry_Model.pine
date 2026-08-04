@@ -92,6 +92,13 @@ f_lvlTextY(_y) =>
 f_lvlLabel(_x, _y, _txt, _col) =>
     label.new(_x, f_lvlTextY(_y), _txt, xloc = xloc.bar_index, style = label.style_none, color = color.new(_col, 100), textcolor = _col, size = size.small, textalign = f_lvlTextAlign())
 
+// xloc.bar_index drawings error out if their bar_index is more than ~10000
+// bars behind the current one — a zone can stay non-mitigated (and thus
+// eligible for a box) far longer than that, e.g. in debug mode or while
+// backing a still-alive confirmed setup, so clamp its left edge to a safe
+// distance instead of using its true (possibly ancient) formation bar.
+f_safeLeft(lb) => math.max(lb, bar_index - 9500)
+
 // ============================================================================
 // FVG DETECTION (classic 3-candle, wick based, single timeframe — chart TF)
 // Every non-mitigated FVG is kept (not just the newest), so a candle can
@@ -515,7 +522,7 @@ if array.size(bullFvgs) > 0
         keepBull = debugAllZones or i == lastIdxBull or f_formBarLive(z.formBar, longSetups)
         if keepBull
             if na(z.boxRef) and showFvgBox
-                z.boxRef := box.new(z.leftBar, z.top, bar_index + 2, z.bot, border_color = na, bgcolor = bullPoiColor, text = showFvgLabel ? "FVG+ " + timeframe.period + " MBZ" : "", text_size = size.small, text_color = bullFvgTextColor, text_halign = f_fvgTextHalign(), text_valign = f_fvgTextValign(), text_wrap = text.wrap_none)
+                z.boxRef := box.new(f_safeLeft(z.leftBar), z.top, bar_index + 2, z.bot, border_color = na, bgcolor = bullPoiColor, text = showFvgLabel ? "FVG+ " + timeframe.period + " MBZ" : "", text_size = size.small, text_color = bullFvgTextColor, text_halign = f_fvgTextHalign(), text_valign = f_fvgTextValign(), text_wrap = text.wrap_none)
             else if not na(z.boxRef)
                 box.set_right(z.boxRef, bar_index + 2)
         else if not na(z.boxRef)
@@ -529,7 +536,7 @@ if array.size(bearFvgs) > 0
         keepBear = debugAllZones or i == lastIdxBear or f_formBarLive(z.formBar, shortSetups)
         if keepBear
             if na(z.boxRef) and showFvgBox
-                z.boxRef := box.new(z.leftBar, z.top, bar_index + 2, z.bot, border_color = na, bgcolor = bearPoiColor, text = showFvgLabel ? "FVG- " + timeframe.period + " MBZ" : "", text_size = size.small, text_color = bearFvgTextColor, text_halign = f_fvgTextHalign(), text_valign = f_fvgTextValign(), text_wrap = text.wrap_none)
+                z.boxRef := box.new(f_safeLeft(z.leftBar), z.top, bar_index + 2, z.bot, border_color = na, bgcolor = bearPoiColor, text = showFvgLabel ? "FVG- " + timeframe.period + " MBZ" : "", text_size = size.small, text_color = bearFvgTextColor, text_halign = f_fvgTextHalign(), text_valign = f_fvgTextValign(), text_wrap = text.wrap_none)
             else if not na(z.boxRef)
                 box.set_right(z.boxRef, bar_index + 2)
         else if not na(z.boxRef)
