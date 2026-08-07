@@ -1,0 +1,583 @@
+//@version=6
+indicator("MBZ Entry Model by NINE", overlay = true, max_boxes_count = 500, max_lines_count = 500, max_labels_count = 500)
+
+// ============================================================================
+// INPUTS
+// ============================================================================
+grpPOI = "FVG / POI"
+showFvgBox   = input.bool(true, "FVG Box anzeigen", group = grpPOI)
+bullPoiColor = input.color(color.new(color.teal, 85), "Bullish FVG Farbe", group = grpPOI)
+bearPoiColor = input.color(color.new(color.red, 85), "Bearish FVG Farbe", group = grpPOI)
+showFvgLabel = input.bool(true, "FVG-Text (FVG+/- TF MBZ) anzeigen", group = grpPOI)
+bullFvgTextColor = input.color(color.teal, "Bullish FVG-Text Farbe", group = grpPOI)
+bearFvgTextColor = input.color(color.red, "Bearish FVG-Text Farbe", group = grpPOI)
+fvgTextH = input.string("Links", "FVG-Text horizontale Position", options = ["Links", "Mitte", "Rechts"], group = grpPOI)
+fvgTextV = input.string("Oben", "FVG-Text vertikale Position", options = ["Oben", "Mitte", "Unten"], group = grpPOI)
+
+grpMbz = "MBZ / Entry"
+showC1Line   = input.bool(true, "C1 0.5-Linie (Validierungs-Schwelle) anzeigen", group = grpMbz)
+showZoneBox  = input.bool(true, "C2 Body-Zone (0/1) anzeigen", group = grpMbz)
+showEntry    = input.bool(true, "Entry-Linie (0.5 von C2) anzeigen", group = grpMbz)
+showStopLvls = input.bool(true, "Stop-Referenzlevel (1.5 / 2) anzeigen", group = grpMbz)
+showTpLvls   = input.bool(true, "Ziel-Referenzlevel (-1/-2/-4/-6/-7) anzeigen", group = grpMbz)
+extendInfinite = input.bool(true, "Level-Linien unendlich nach rechts verlängern", group = grpMbz)
+projectionBars = input.int(40, "Projektionslänge (Bars), falls nicht unendlich", minval = 5, group = grpMbz)
+lvlLineStyleInput = input.string("Gestrichelt", "Linienstil (Entry/SL/TP)", options = ["Durchgezogen", "Gestrichelt", "Gepunktet"], group = grpMbz)
+lvlLineWidth = input.int(1, "Liniendicke (Entry/SL/TP)", minval = 1, maxval = 4, group = grpMbz)
+lvlTextH = input.string("Links", "Text-Ausrichtung horizontal (Entry/SL/TP)", options = ["Links", "Mitte", "Rechts"], group = grpMbz)
+lvlTextV = input.string("Auf der Linie", "Text-Ausrichtung vertikal (Entry/SL/TP)", options = ["Über der Linie", "Auf der Linie", "Unter der Linie"], group = grpMbz)
+
+longColor  = input.color(color.new(color.lime, 0), "Long Farbe", group = grpMbz)
+shortColor = input.color(color.new(color.red, 0), "Short Farbe", group = grpMbz)
+stopColor  = input.color(color.new(color.gray, 40), "Stop-Level Farbe", group = grpMbz)
+tpColor    = input.color(color.new(color.green, 40), "Ziel-Level Farbe", group = grpMbz)
+
+directionFilter = input.string("Beide", "Richtung", options = ["Beide", "Nur Bullish", "Nur Bearish"], group = grpMbz)
+maxSetups = input.int(1, "Anzahl gleichzeitig sichtbarer bestätigter Setups (pro Richtung)", minval = 1, maxval = 20, group = grpMbz)
+
+longEnabled  = directionFilter != "Nur Bearish"
+shortEnabled = directionFilter != "Nur Bullish"
+
+showLabels = input.bool(true, "C1/C2/Entry Labels anzeigen", group = "Anzeige")
+debugAllZones = input.bool(false, "Debug: ALLE FVG-Zonen als Box anzeigen (auch pending C1)", group = "Anzeige")
+debugValidation = input.bool(false, "Debug: C2-Validierungs-Info anzeigen", group = "Anzeige")
+
+// ============================================================================
+// HELPERS
+// ============================================================================
+median(o, c) => (o + c) / 2
+
+f_extend() => extendInfinite ? extend.right : extend.none
+f_x2(_x1) => extendInfinite ? _x1 + 1 : _x1 + projectionBars
+
+f_line(_x1, _y1, _y2, _col, _style, _width) =>
+    line.new(_x1, _y1, f_x2(_x1), _y2, xloc = xloc.bar_index, extend = f_extend(), color = _col, style = _style, width = _width)
+
+f_lvlLineStyle() =>
+    switch lvlLineStyleInput
+        "Durchgezogen" => line.style_solid
+        "Gepunktet"    => line.style_dotted
+        => line.style_dashed
+
+f_label(_x, _y, _txt, _col) =>
+    label.new(_x, _y, _txt, xloc = xloc.bar_index, style = label.style_none, color = color.new(_col, 100), textcolor = _col, size = size.small)
+
+f_clearLines(arr) =>
+    if array.size(arr) > 0
+        for ln in arr
+            line.delete(ln)
+        array.clear(arr)
+
+f_clearLabels(arr) =>
+    if array.size(arr) > 0
+        for lb in arr
+            label.delete(lb)
+        array.clear(arr)
+
+tagOffsetMult = input.float(1.0, "C1/C2 Textabstand von der Kerze (x ATR)", minval = 0, group = "Anzeige")
+tagOffset = ta.atr(14) * tagOffsetMult
+
+f_lvlTextAlign() =>
+    switch lvlTextH
+        "Mitte"  => text.align_center
+        "Rechts" => text.align_right
+        => text.align_left
+
+f_lvlTextY(_y) =>
+    switch lvlTextV
+        "Über der Linie" => _y + tagOffset
+        "Unter der Linie" => _y - tagOffset
+        => _y
+
+f_lvlLabel(_x, _y, _txt, _col) =>
+    label.new(_x, f_lvlTextY(_y), _txt, xloc = xloc.bar_index, style = label.style_none, color = color.new(_col, 100), textcolor = _col, size = size.small, textalign = f_lvlTextAlign())
+
+// xloc.bar_index drawings error out if their bar_index is more than ~10000
+// bars behind the current one — a zone can stay non-mitigated (and thus
+// eligible for a box) far longer than that, e.g. in debug mode or while
+// backing a still-alive confirmed setup, so clamp its left edge to a safe
+// distance instead of using its true (possibly ancient) formation bar.
+f_safeLeft(lb) => math.max(lb, bar_index - 9500)
+
+// ============================================================================
+// FVG DETECTION (classic 3-candle, wick based, single timeframe — chart TF)
+// Every non-mitigated FVG is kept (not just the newest), so a candle can
+// still touch and trigger an older, still-valid gap.
+// ============================================================================
+bullFvg = low > high[2]
+bearFvg = high < low[2]
+
+type FvgZone
+    float top
+    float bot
+    int   leftBar
+    int   formBar
+    bool  used      // this zone already produced a confirmed setup
+    bool  swept     // a swing point formed after that use has since been swept in it
+    float lastSwing
+    box   boxRef
+    bool  c1Set          // this zone currently has its own pending C1
+    float c1Open
+    float c1Close
+    int   c1Bar
+    line  c1Line          // dotted 0.5 validation-threshold line
+    label c1PendingLabel  // "C1" tag while this zone's C1 is unconfirmed
+
+// one fully confirmed (C2-validated) setup's own drawings/state — several of
+// these can be alive at once per direction (see maxSetups)
+type ConfirmedSetup
+    label c1Label
+    label c2Label
+    label c3Label
+    box   zoneBox
+    line  entryLine
+    label entryLabel
+    float entry
+    float sl2Level
+    int   c2Bar
+    int   srcFormBar      // formBar of the FvgZone this setup came from
+    array<line>  slLines
+    array<label> slLabels
+    array<line>  tpLines
+    array<label> tpLabels
+
+f_deleteSetup(s) =>
+    if not na(s.c1Label)
+        label.delete(s.c1Label)
+    if not na(s.c2Label)
+        label.delete(s.c2Label)
+    if not na(s.c3Label)
+        label.delete(s.c3Label)
+    if not na(s.zoneBox)
+        box.delete(s.zoneBox)
+    if not na(s.entryLine)
+        line.delete(s.entryLine)
+    if not na(s.entryLabel)
+        label.delete(s.entryLabel)
+    f_clearLines(s.slLines)
+    f_clearLabels(s.slLabels)
+    f_clearLines(s.tpLines)
+    f_clearLabels(s.tpLabels)
+
+f_formBarLive(fb, setups) =>
+    found = false
+    for s in setups
+        if s.srcFormBar == fb
+            found := true
+    found
+
+f_c1Summary(zones) =>
+    msg = ""
+    for z in zones
+        if z.c1Set
+            msg := msg + "PENDING c1Bar=" + str.tostring(z.c1Bar) + " " + str.tostring(z.top, format.mintick) + "/" + str.tostring(z.bot, format.mintick) + "\n"
+        if z.used and not z.swept
+            lastSwingStr = na(z.lastSwing) ? "na" : str.tostring(z.lastSwing, format.mintick)
+            msg := msg + "GATED(used,unswept) " + str.tostring(z.top, format.mintick) + "/" + str.tostring(z.bot, format.mintick) + " lastSwing=" + lastSwingStr + "\n"
+    msg == "" ? "-" : msg
+
+// FVG text uses the box's own native text/text_halign/text_valign — Pine
+// keeps it clipped to the box bounds automatically, no manual x/y/overflow
+// handling needed.
+f_fvgTextHalign() =>
+    switch fvgTextH
+        "Mitte"  => text.align_center
+        "Rechts" => text.align_right
+        => text.align_left
+
+f_fvgTextValign() =>
+    switch fvgTextV
+        "Mitte" => text.align_center
+        "Unten" => text.align_bottom
+        => text.align_top
+
+var table dbgTable = table.new(position.top_left, 1, 6, bgcolor = color.new(color.black, 10), border_width = 1, border_color = color.gray)
+
+var array<FvgZone> bullFvgs = array.new<FvgZone>()
+var array<FvgZone> bearFvgs = array.new<FvgZone>()
+
+var array<ConfirmedSetup> longSetups  = array.new<ConfirmedSetup>()
+var array<ConfirmedSetup> shortSetups = array.new<ConfirmedSetup>()
+
+// register a newly formed FVG — added to the list, older non-mitigated ones are kept
+if bullFvg and longEnabled
+    array.push(bullFvgs, FvgZone.new(low, high[2], bar_index[2], bar_index, false, false, na, na, false, na, na, na, na, na))
+if bearFvg and shortEnabled
+    array.push(bearFvgs, FvgZone.new(low[2], high, bar_index[2], bar_index, false, false, na, na, false, na, na, na, na, na))
+
+// ============================================================================
+// SWING POINTS — gate FVG *reuse* per zone: once a zone already produced a
+// confirmed setup, a further C1 in it only counts after a swing point
+// (classic 3-bar fractal) that formed since then gets swept (wick only)
+// while trading inside that same zone.
+// ============================================================================
+swingHighConfirmed = high[1] > high[2] and high[1] > high[0]
+swingLowConfirmed  = low[1]  < low[2]  and low[1]  < low[0]
+
+for z in bearFvgs
+    if z.used and not z.swept
+        if not na(z.lastSwing) and high > z.lastSwing and low <= z.top and high >= z.bot
+            z.swept := true
+        if not z.swept and swingHighConfirmed
+            z.lastSwing := high[1]
+
+for z in bullFvgs
+    if z.used and not z.swept
+        if not na(z.lastSwing) and low < z.lastSwing and low <= z.top and high >= z.bot
+            z.swept := true
+        if not z.swept and swingLowConfirmed
+            z.lastSwing := low[1]
+
+// ============================================================================
+// LONG SETUP (bullish FVG -> bearish C1 inside it -> bullish C2 validates)
+// Each non-mitigated zone tracks its OWN pending C1 independently, so several
+// zones can be "in the running" for a setup at the same time. Up to
+// `maxSetups` confirmed setups stay visible at once (FIFO eviction).
+// ============================================================================
+longEntryEvent = false
+
+if longEnabled
+    // attempt validation on the candle immediately following each zone's own C1,
+    // only once that candle has actually CLOSED (barstate.isconfirmed) — close
+    // is still live/changing on the forming bar, so entry/SL/TP must not appear
+    // (and potentially repaint away) before C2's close is final.
+    // Each validating zone builds and pushes its OWN ConfirmedSetup right here,
+    // independently — a shared "winner" variable would let a later zone in this
+    // same loop silently overwrite/drop an earlier zone that validated on the
+    // very same bar, which is exactly the multi-setup case this script needs to
+    // support (several zones can legitimately confirm on the same candle).
+    for z in bullFvgs
+        if z.c1Set and bar_index == z.c1Bar + 1 and barstate.isconfirmed
+            validated = close > open and close > median(z.c1Open, z.c1Close)
+            if debugValidation
+                table.cell(dbgTable, 0, 2, "V-long bar" + str.tostring(bar_index) + ": " + str.tostring(validated) + " close=" + str.tostring(close, format.mintick) + " open=" + str.tostring(open, format.mintick) + " c1O=" + str.tostring(z.c1Open, format.mintick) + " c1C=" + str.tostring(z.c1Close, format.mintick) + " med=" + str.tostring(median(z.c1Open, z.c1Close), format.mintick), text_color = color.yellow, text_size = size.small, text_halign = text.align_left)
+            if validated
+                longEntryEvent := true
+                c2Open  = open
+                c2Close = close
+                c2Bar   = bar_index
+                entry   = median(open, close)
+                unit = c2Close - c2Open
+                if unit > 0
+                    x1 = c2Bar
+                    newSetup = ConfirmedSetup.new(na, na, na, na, na, na, entry, c2Close - 2.0 * unit, x1, na, array.new_line(), array.new_label(), array.new_line(), array.new_label())
+
+                    // promote this zone's pending C1 tag to the confirmed one for this
+                    // setup, and align it with C2's tag — both at the same height, below C2's low
+                    newSetup.c1Label := z.c1PendingLabel
+                    z.c1PendingLabel := na
+                    newSetup.srcFormBar := z.formBar
+                    z.used := true
+                    z.swept := false
+                    if not na(newSetup.c1Label)
+                        label.set_y(newSetup.c1Label, low - tagOffset)
+
+                    if showLabels
+                        newSetup.c2Label := f_label(c2Bar, low - tagOffset, "C2", longColor)
+                        newSetup.c3Label := f_label(x1 + 1, low - tagOffset, "C3", longColor)
+                    if showZoneBox
+                        newSetup.zoneBox := box.new(x1, c2Close, x1 + 1, c2Open, border_color = na, bgcolor = color.new(longColor, 90))
+                    if showEntry
+                        newSetup.entryLine := f_line(x1, entry, entry, longColor, f_lvlLineStyle(), lvlLineWidth)
+                        if showLabels
+                            newSetup.entryLabel := f_lvlLabel(f_x2(x1), entry, "Entry " + str.tostring(entry, format.mintick), longColor)
+                    if showStopLvls
+                        for n = 1.5 to 2.0 by 0.5
+                            lvl = c2Close - n * unit
+                            array.push(newSetup.slLines, f_line(x1, lvl, lvl, stopColor, f_lvlLineStyle(), lvlLineWidth))
+                            if showLabels
+                                array.push(newSetup.slLabels, f_lvlLabel(f_x2(x1), lvl, "SL " + str.tostring(n) + " (" + str.tostring(lvl, format.mintick) + ")", stopColor))
+                    if showTpLvls
+                        for n in array.from(-1.0, -2.0, -4.0, -6.0, -7.0)
+                            lvl = c2Close - n * unit
+                            array.push(newSetup.tpLines, f_line(x1, lvl, lvl, tpColor, f_lvlLineStyle(), lvlLineWidth))
+                            if showLabels
+                                array.push(newSetup.tpLabels, f_lvlLabel(f_x2(x1), lvl, "TP " + str.tostring(-n) + " (" + str.tostring(lvl, format.mintick) + ")", tpColor))
+
+                    array.push(longSetups, newSetup)
+                    if array.size(longSetups) > maxSetups
+                        oldestLong = array.get(longSetups, 0)
+                        f_deleteSetup(oldestLong)
+                        array.remove(longSetups, 0)
+            z.c1Set := false
+            if not na(z.c1Line)
+                line.delete(z.c1Line)
+                z.c1Line := na
+            if not validated and not na(z.c1PendingLabel)
+                label.delete(z.c1PendingLabel)
+                z.c1PendingLabel := na
+
+    // new C1: bearish candle whose range touches (even by 1 pip) any active, non-mitigated
+    // bullish FVG (not just the newest) — must come after that FVG's own 3-candle
+    // formation, and if the FVG was already used once, only counts again after a
+    // swing low has been swept in it. Every qualifying zone gets its own C1 — no
+    // "winner takes all", so several zones can independently chase a setup.
+    if close < open
+        for z in bullFvgs
+            if bar_index > z.formBar and (not z.used or z.swept) and low <= z.top and high >= z.bot
+                if not na(z.c1Line)
+                    line.delete(z.c1Line)
+                if not na(z.c1PendingLabel)
+                    label.delete(z.c1PendingLabel)
+                    z.c1PendingLabel := na
+                z.c1Open := open
+                z.c1Close := close
+                z.c1Bar := bar_index
+                z.c1Set := true
+                if showC1Line
+                    z.c1Line := line.new(bar_index, median(open, close), bar_index + 1, median(open, close), xloc = xloc.bar_index, color = longColor, style = line.style_dotted, width = 1)
+                if showLabels
+                    z.c1PendingLabel := f_label(bar_index, low - tagOffset, "C1", longColor)
+                if debugValidation
+                    table.cell(dbgTable, 0, 4, "C1-long reg bar" + str.tostring(bar_index) + ", formBar=" + str.tostring(z.formBar) + " top=" + str.tostring(z.top, format.mintick) + " bot=" + str.tostring(z.bot, format.mintick), text_color = color.aqua, text_size = size.small, text_halign = text.align_left)
+
+    for z in bullFvgs
+        if z.c1Set and showC1Line and not na(z.c1Line)
+            line.set_x2(z.c1Line, bar_index + 1)
+
+// ============================================================================
+// SHORT SETUP (mirror of long)
+// ============================================================================
+shortEntryEvent = false
+
+if shortEnabled
+    // attempt validation on the candle immediately following each zone's own C1.
+    // Each validating zone builds and pushes its OWN ConfirmedSetup right here,
+    // independently — see the mirrored comment in the LONG SETUP section above.
+    for z in bearFvgs
+        if z.c1Set and bar_index == z.c1Bar + 1 and barstate.isconfirmed
+            validated = close < open and close < median(z.c1Open, z.c1Close)
+            if debugValidation
+                table.cell(dbgTable, 0, 3, "V-short bar" + str.tostring(bar_index) + ": " + str.tostring(validated) + " close=" + str.tostring(close, format.mintick) + " open=" + str.tostring(open, format.mintick) + " c1O=" + str.tostring(z.c1Open, format.mintick) + " c1C=" + str.tostring(z.c1Close, format.mintick) + " med=" + str.tostring(median(z.c1Open, z.c1Close), format.mintick), text_color = color.yellow, text_size = size.small, text_halign = text.align_left)
+            if validated
+                shortEntryEvent := true
+                c2Open  = open
+                c2Close = close
+                c2Bar   = bar_index
+                entry   = median(open, close)
+                unit = c2Close - c2Open // negative for a bearish C2
+                if unit < 0
+                    x1 = c2Bar
+                    newSetup = ConfirmedSetup.new(na, na, na, na, na, na, entry, c2Close - 2.0 * unit, x1, na, array.new_line(), array.new_label(), array.new_line(), array.new_label())
+
+                    // align this zone's C1 tag with C2's tag — both at the same height, above C2's high
+                    newSetup.c1Label := z.c1PendingLabel
+                    z.c1PendingLabel := na
+                    newSetup.srcFormBar := z.formBar
+                    z.used := true
+                    z.swept := false
+                    if not na(newSetup.c1Label)
+                        label.set_y(newSetup.c1Label, high + tagOffset)
+
+                    if showLabels
+                        newSetup.c2Label := f_label(c2Bar, high + tagOffset, "C2", shortColor)
+                        newSetup.c3Label := f_label(x1 + 1, high + tagOffset, "C3", shortColor)
+                    if showZoneBox
+                        newSetup.zoneBox := box.new(x1, c2Close, x1 + 1, c2Open, border_color = na, bgcolor = color.new(shortColor, 90))
+                    if showEntry
+                        newSetup.entryLine := f_line(x1, entry, entry, shortColor, f_lvlLineStyle(), lvlLineWidth)
+                        if showLabels
+                            newSetup.entryLabel := f_lvlLabel(f_x2(x1), entry, "Entry " + str.tostring(entry, format.mintick), shortColor)
+                    if showStopLvls
+                        for n = 1.5 to 2.0 by 0.5
+                            lvl = c2Close - n * unit
+                            array.push(newSetup.slLines, f_line(x1, lvl, lvl, stopColor, f_lvlLineStyle(), lvlLineWidth))
+                            if showLabels
+                                array.push(newSetup.slLabels, f_lvlLabel(f_x2(x1), lvl, "SL " + str.tostring(n) + " (" + str.tostring(lvl, format.mintick) + ")", stopColor))
+                    if showTpLvls
+                        for n in array.from(-1.0, -2.0, -4.0, -6.0, -7.0)
+                            lvl = c2Close - n * unit
+                            array.push(newSetup.tpLines, f_line(x1, lvl, lvl, tpColor, f_lvlLineStyle(), lvlLineWidth))
+                            if showLabels
+                                array.push(newSetup.tpLabels, f_lvlLabel(f_x2(x1), lvl, "TP " + str.tostring(-n) + " (" + str.tostring(lvl, format.mintick) + ")", tpColor))
+
+                    array.push(shortSetups, newSetup)
+                    if array.size(shortSetups) > maxSetups
+                        oldestShort = array.get(shortSetups, 0)
+                        f_deleteSetup(oldestShort)
+                        array.remove(shortSetups, 0)
+            z.c1Set := false
+            if not na(z.c1Line)
+                line.delete(z.c1Line)
+                z.c1Line := na
+            if not validated and not na(z.c1PendingLabel)
+                label.delete(z.c1PendingLabel)
+                z.c1PendingLabel := na
+
+    // new C1: bullish candle whose range touches (even by 1 pip) any active, non-mitigated
+    // bearish FVG (not just the newest) — must come after that FVG's own 3-candle
+    // formation, and if the FVG was already used once, only counts again after a
+    // swing high has been swept in it. Every qualifying zone gets its own C1 — no
+    // "winner takes all", so several zones can independently chase a setup.
+    if close > open
+        for z in bearFvgs
+            if bar_index > z.formBar and (not z.used or z.swept) and high >= z.bot and low <= z.top
+                if not na(z.c1Line)
+                    line.delete(z.c1Line)
+                if not na(z.c1PendingLabel)
+                    label.delete(z.c1PendingLabel)
+                    z.c1PendingLabel := na
+                z.c1Open := open
+                z.c1Close := close
+                z.c1Bar := bar_index
+                z.c1Set := true
+                if showC1Line
+                    z.c1Line := line.new(bar_index, median(open, close), bar_index + 1, median(open, close), xloc = xloc.bar_index, color = shortColor, style = line.style_dotted, width = 1)
+                if showLabels
+                    z.c1PendingLabel := f_label(bar_index, high + tagOffset, "C1", shortColor)
+                if debugValidation
+                    table.cell(dbgTable, 0, 5, "C1-short reg bar" + str.tostring(bar_index) + ", formBar=" + str.tostring(z.formBar) + " top=" + str.tostring(z.top, format.mintick) + " bot=" + str.tostring(z.bot, format.mintick), text_color = color.aqua, text_size = size.small, text_halign = text.align_left)
+
+    for z in bearFvgs
+        if z.c1Set and showC1Line and not na(z.c1Line)
+            line.set_x2(z.c1Line, bar_index + 1)
+
+// ============================================================================
+// INVALIDATION
+// Rule 1: C3 (the candle right after C2) never traded back into the entry
+// (0.5 of C2). Once C4 forms, that individual setup is dead: remove it.
+// Applies independently to every currently visible setup.
+// ============================================================================
+i_lr1 = array.size(longSetups) - 1
+while i_lr1 >= 0
+    s = array.get(longSetups, i_lr1)
+    if bar_index == s.c2Bar + 2 and low[1] > s.entry
+        f_deleteSetup(s)
+        array.remove(longSetups, i_lr1)
+    i_lr1 -= 1
+
+i_sr1 = array.size(shortSetups) - 1
+while i_sr1 >= 0
+    s = array.get(shortSetups, i_sr1)
+    if bar_index == s.c2Bar + 2 and high[1] < s.entry
+        f_deleteSetup(s)
+        array.remove(shortSetups, i_sr1)
+    i_sr1 -= 1
+
+// INVALIDATION — price reached the setup's own "SL 2" reference level: the
+// stop would have been hit, that setup is dead, remove it (independently).
+// Only from the bar AFTER confirmation onward: sl2Level is computed from the
+// C2 candle's own close, so that same candle's own wick can trivially already
+// reach past it, which would delete a setup the instant it's created.
+i_l2 = array.size(longSetups) - 1
+while i_l2 >= 0
+    s = array.get(longSetups, i_l2)
+    if bar_index > s.c2Bar and low <= s.sl2Level
+        f_deleteSetup(s)
+        array.remove(longSetups, i_l2)
+    i_l2 -= 1
+
+i_s2 = array.size(shortSetups) - 1
+while i_s2 >= 0
+    s = array.get(shortSetups, i_s2)
+    if bar_index > s.c2Bar and high >= s.sl2Level
+        f_deleteSetup(s)
+        array.remove(shortSetups, i_s2)
+    i_s2 -= 1
+
+// ============================================================================
+// MITIGATION — a zone is only mitigated once a candle's BODY closes beyond
+// its far boundary, fully enclosing/covering the FVG (a wick alone is not
+// enough). Runs AFTER C1 detection so a candle that qualifies as C1 still
+// gets to register first; only from the *next* bar onward is a mitigated
+// zone actually gone. A fully mitigated FVG is invalid — no exception for a
+// still-pending C1.
+// ============================================================================
+i_bull = array.size(bullFvgs) - 1
+while i_bull >= 0
+    zM = array.get(bullFvgs, i_bull)
+    if close < zM.bot
+        if not na(zM.boxRef)
+            box.delete(zM.boxRef)
+        if not na(zM.c1Line)
+            line.delete(zM.c1Line)
+        if not na(zM.c1PendingLabel)
+            label.delete(zM.c1PendingLabel)
+        array.remove(bullFvgs, i_bull)
+    i_bull -= 1
+
+i_bear = array.size(bearFvgs) - 1
+while i_bear >= 0
+    zM = array.get(bearFvgs, i_bear)
+    if close > zM.top
+        if not na(zM.boxRef)
+            box.delete(zM.boxRef)
+        if not na(zM.c1Line)
+            line.delete(zM.c1Line)
+        if not na(zM.c1PendingLabel)
+            label.delete(zM.c1PendingLabel)
+        array.remove(bearFvgs, i_bear)
+    i_bear -= 1
+
+// ============================================================================
+// FVG BOX LIFECYCLE — only the newest zone, or a zone currently backing any
+// still-alive confirmed setup, keeps a visible box. A zone whose C1 is only
+// pending (C2 hasn't formed/validated yet) shows NO box — the box only
+// appears once C1 is "complete", i.e. while C2 is forming/validated.
+// Every other zone (old, already resolved one way or another — success,
+// failure or invalidation) is decluttered. Runs last so longSetups /
+// shortSetups already reflect this bar's confirmations and invalidations.
+// ============================================================================
+if array.size(bullFvgs) > 0
+    lastIdxBull = array.size(bullFvgs) - 1
+    for i = 0 to lastIdxBull
+        z = array.get(bullFvgs, i)
+        keepBull = debugAllZones or i == lastIdxBull or f_formBarLive(z.formBar, longSetups)
+        if keepBull
+            if na(z.boxRef) and showFvgBox
+                z.boxRef := box.new(f_safeLeft(z.leftBar), z.top, bar_index + 2, z.bot, border_color = na, bgcolor = bullPoiColor, text = showFvgLabel ? "FVG+ " + timeframe.period + " MBZ" : "", text_size = size.small, text_color = bullFvgTextColor, text_halign = f_fvgTextHalign(), text_valign = f_fvgTextValign(), text_wrap = text.wrap_none)
+            else if not na(z.boxRef)
+                box.set_right(z.boxRef, bar_index + 2)
+        else if not na(z.boxRef)
+            box.delete(z.boxRef)
+            z.boxRef := na
+
+if array.size(bearFvgs) > 0
+    lastIdxBear = array.size(bearFvgs) - 1
+    for i = 0 to lastIdxBear
+        z = array.get(bearFvgs, i)
+        keepBear = debugAllZones or i == lastIdxBear or f_formBarLive(z.formBar, shortSetups)
+        if keepBear
+            if na(z.boxRef) and showFvgBox
+                z.boxRef := box.new(f_safeLeft(z.leftBar), z.top, bar_index + 2, z.bot, border_color = na, bgcolor = bearPoiColor, text = showFvgLabel ? "FVG- " + timeframe.period + " MBZ" : "", text_size = size.small, text_color = bearFvgTextColor, text_halign = f_fvgTextHalign(), text_valign = f_fvgTextValign(), text_wrap = text.wrap_none)
+            else if not na(z.boxRef)
+                box.set_right(z.boxRef, bar_index + 2)
+        else if not na(z.boxRef)
+            box.delete(z.boxRef)
+            z.boxRef := na
+
+// ============================================================================
+// keep Entry/SL/TP labels pinned to the right end of their extension —
+// with infinite extension that end is the current bar, so chase it every bar
+// ============================================================================
+if extendInfinite
+    for s in longSetups
+        if not na(s.entryLabel)
+            label.set_x(s.entryLabel, bar_index)
+        for lb in s.slLabels
+            label.set_x(lb, bar_index)
+        for lb in s.tpLabels
+            label.set_x(lb, bar_index)
+    for s in shortSetups
+        if not na(s.entryLabel)
+            label.set_x(s.entryLabel, bar_index)
+        for lb in s.slLabels
+            label.set_x(lb, bar_index)
+        for lb in s.tpLabels
+            label.set_x(lb, bar_index)
+
+// ============================================================================
+// DEBUG — live summary of every zone currently holding a pending C1, redrawn
+// every bar, so you can see (without needing to catch the exact validation
+// bar) whether any zone even still HAS a pending C1 and how far its c1Bar is
+// from the current bar_index.
+// ============================================================================
+if debugValidation
+    table.cell(dbgTable, 0, 0, "bull c1Set (now=" + str.tostring(bar_index) + "):\n" + f_c1Summary(bullFvgs), text_color = color.lime, text_size = size.small, text_halign = text.align_left)
+    table.cell(dbgTable, 0, 1, "bear c1Set (now=" + str.tostring(bar_index) + "):\n" + f_c1Summary(bearFvgs), text_color = color.orange, text_size = size.small, text_halign = text.align_left)
+
+// ============================================================================
+// ALERTS
+// ============================================================================
+alertcondition(longEntryEvent, "MBZ Long Entry", "MBZ Long Entry bei {{close}}")
+alertcondition(shortEntryEvent, "MBZ Short Entry", "MBZ Short Entry bei {{close}}")
