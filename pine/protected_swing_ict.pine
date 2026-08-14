@@ -3,163 +3,147 @@ indicator("Protected Swing (ICT)", overlay = true, max_lines_count = 500)
 
 // ============================================================
 // Protected Swing (ICT)
-// A swing point (high/low) is "protected" when:
-//   1) it formed inside an existing Fair Value Gap (FVG), and
-//   2) it was followed by a CISD (Change in State of Delivery)
-//      confirming the reversal.
+// A bullish FVG forms -> price pulls back and touches the FVG
+// zone (bearish candles included) -> price turns bullish and
+// closes above the highest open among the bearish candles that
+// touched the zone (CISD) -> the lowest low touched during that
+// pullback becomes a Protected Swing Low.
+// Mirrored for a bearish FVG -> Protected Swing High.
 // A protected point is de-protected the moment price wicks
-// through it again (low breaks a protected low / high breaks a
-// protected high).
+// through it again.
 // ============================================================
 
-// ---------------- Inputs ----------------
-swingLen    = input.int(3, "Swing Pivot Lookback (bars left/right)", minval = 1)
-cisdMaxBars = input.int(30, "Max Bars to Search for CISD Origin", minval = 1)
-fvgLookback = input.int(50, "Max Bars an FVG Stays Eligible", minval = 1)
-bullColor   = input.color(color.new(color.lime, 0), "Protected Swing Low Color")
-bearColor   = input.color(color.new(color.red, 0), "Protected Swing High Color")
-dotWidth    = input.int(1, "Dot Width (px)", minval = 1, maxval = 4)
+fvgLookback   = input.int(50, "Max Bars to Wait for CISD", minval = 1)
+bullColor     = input.color(color.new(color.lime, 0), "Protected Swing Low Color")
+bearColor     = input.color(color.new(color.red, 0), "Protected Swing High Color")
+dotWidth      = input.int(1, "Dot Width (px)", minval = 1, maxval = 4)
 dotOffsetMult = input.float(0.1, "Dot Distance from Swing (ATR mult.)", minval = 0.0, step = 0.05)
 
-// ---------------- FVG detection ----------------
+atrOffset = ta.atr(14) * dotOffsetMult
+
+// ---------------- FVG formation ----------------
 bullFVG = low > high[2]
 bearFVG = high < low[2]
 
-var float[] fvgTop  = array.new_float()
-var float[] fvgBot  = array.new_float()
-var int[]   fvgBar  = array.new_int()
+// ---------------- Bullish FVG tracking -> Protected Swing Low ----------------
+var float[] bTop       = array.new_float()
+var float[] bBot       = array.new_float()
+var float[] bOrigin    = array.new_float()   // na until first bearish touch
+var float[] bSwingLow  = array.new_float()   // na until first touch
+var int[]   bSwingBar  = array.new_int()
+var int[]   bStartBar  = array.new_int()
 
 if bullFVG
-    array.push(fvgTop, low)
-    array.push(fvgBot, high[2])
-    array.push(fvgBar, bar_index)
-if bearFVG
-    array.push(fvgTop, low[2])
-    array.push(fvgBot, high)
-    array.push(fvgBar, bar_index)
-
-// prune FVGs that fell out of the lookback window
-if array.size(fvgBar) > 0
-    for i = array.size(fvgBar) - 1 to 0
-        if bar_index - array.get(fvgBar, i) > fvgLookback
-            array.remove(fvgTop, i)
-            array.remove(fvgBot, i)
-            array.remove(fvgBar, i)
-
-isInsideFVG(level, atBar) =>
-    bool found = false
-    if array.size(fvgTop) > 0
-        for i = 0 to array.size(fvgTop) - 1
-            fBar = array.get(fvgBar, i)
-            if fBar <= atBar and fBar >= atBar - fvgLookback
-                top = array.get(fvgTop, i)
-                bot = array.get(fvgBot, i)
-                if level <= top and level >= bot
-                    found := true
-    found
-
-// ---------------- CISD origin finder ----------------
-// Walks back from `startOffset` through a same-direction streak and
-// returns the open of the first (earliest) candle in that streak.
-findCisdOrigin(startOffset, bullish) =>
-    int off = startOffset
-    if bullish
-        if close[off] >= open[off]
-            off += 1
-    else
-        if close[off] <= open[off]
-            off += 1
-    int lastGood = off
-    for i = 0 to cisdMaxBars
-        idx = off + i
-        isMatch = bullish ? close[idx] < open[idx] : close[idx] > open[idx]
-        if isMatch
-            lastGood := idx
-        else
-            break
-    open[lastGood]
-
-// ---------------- Pivot detection ----------------
-ph = ta.pivothigh(high, swingLen, swingLen)
-pl = ta.pivotlow(low, swingLen, swingLen)
-atrOffset = ta.atr(14) * dotOffsetMult
-
-// ---------------- State ----------------
-var float[] pendLowPrice  = array.new_float()
-var int[]   pendLowBar    = array.new_int()
-var float[] pendLowOrigin = array.new_float()
-
-var float[] pendHighPrice  = array.new_float()
-var int[]   pendHighBar    = array.new_int()
-var float[] pendHighOrigin = array.new_float()
+    array.push(bTop, low)
+    array.push(bBot, high[2])
+    array.push(bOrigin, na)
+    array.push(bSwingLow, na)
+    array.push(bSwingBar, na)
+    array.push(bStartBar, bar_index)
 
 var float[] protLowPrice = array.new_float()
 var int[]   protLowBar   = array.new_int()
 var line[]  protLowDot   = array.new_line()
 
+if array.size(bTop) > 0
+    for i = array.size(bTop) - 1 to 0
+        top      = array.get(bTop, i)
+        bot      = array.get(bBot, i)
+        startBar = array.get(bStartBar, i)
+        touches  = low <= top and high >= bot
+        expired  = bar_index - startBar > fvgLookback
+        violated = close < bot
+        if violated or expired
+            array.remove(bTop, i)
+            array.remove(bBot, i)
+            array.remove(bOrigin, i)
+            array.remove(bSwingLow, i)
+            array.remove(bSwingBar, i)
+            array.remove(bStartBar, i)
+        else if touches
+            curOrigin = array.get(bOrigin, i)
+            curLow    = array.get(bSwingLow, i)
+            if close < open
+                array.set(bOrigin, i, na(curOrigin) ? open : math.max(curOrigin, open))
+            if na(curLow) or low < curLow
+                array.set(bSwingLow, i, low)
+                array.set(bSwingBar, i, bar_index)
+            finalOrigin = array.get(bOrigin, i)
+            if not na(finalOrigin) and close > finalOrigin
+                swingPrice = array.get(bSwingLow, i)
+                swingBar   = array.get(bSwingBar, i)
+                dotY = swingPrice - atrOffset
+                dot  = line.new(swingBar, dotY, swingBar, dotY, xloc.bar_index, extend.none, bullColor, line.style_solid, dotWidth)
+                array.push(protLowPrice, swingPrice)
+                array.push(protLowBar, swingBar)
+                array.push(protLowDot, dot)
+                array.remove(bTop, i)
+                array.remove(bBot, i)
+                array.remove(bOrigin, i)
+                array.remove(bSwingLow, i)
+                array.remove(bSwingBar, i)
+                array.remove(bStartBar, i)
+
+// ---------------- Bearish FVG tracking -> Protected Swing High ----------------
+var float[] rTop        = array.new_float()
+var float[] rBot        = array.new_float()
+var float[] rOrigin     = array.new_float()   // na until first bullish touch
+var float[] rSwingHigh  = array.new_float()   // na until first touch
+var int[]   rSwingBar   = array.new_int()
+var int[]   rStartBar   = array.new_int()
+
+if bearFVG
+    array.push(rTop, high[2])
+    array.push(rBot, low)
+    array.push(rOrigin, na)
+    array.push(rSwingHigh, na)
+    array.push(rSwingBar, na)
+    array.push(rStartBar, bar_index)
+
 var float[] protHighPrice = array.new_float()
 var int[]   protHighBar   = array.new_int()
 var line[]  protHighDot   = array.new_line()
 
-// ---- new pivot low candidate ----
-if not na(pl)
-    pivotBar = bar_index - swingLen
-    if isInsideFVG(pl, pivotBar)
-        origin = findCisdOrigin(swingLen, true)
-        array.push(pendLowPrice, pl)
-        array.push(pendLowBar, pivotBar)
-        array.push(pendLowOrigin, origin)
+if array.size(rTop) > 0
+    for i = array.size(rTop) - 1 to 0
+        top      = array.get(rTop, i)
+        bot      = array.get(rBot, i)
+        startBar = array.get(rStartBar, i)
+        touches  = high >= bot and low <= top
+        expired  = bar_index - startBar > fvgLookback
+        violated = close > top
+        if violated or expired
+            array.remove(rTop, i)
+            array.remove(rBot, i)
+            array.remove(rOrigin, i)
+            array.remove(rSwingHigh, i)
+            array.remove(rSwingBar, i)
+            array.remove(rStartBar, i)
+        else if touches
+            curOrigin = array.get(rOrigin, i)
+            curHigh   = array.get(rSwingHigh, i)
+            if close > open
+                array.set(rOrigin, i, na(curOrigin) ? open : math.min(curOrigin, open))
+            if na(curHigh) or high > curHigh
+                array.set(rSwingHigh, i, high)
+                array.set(rSwingBar, i, bar_index)
+            finalOrigin = array.get(rOrigin, i)
+            if not na(finalOrigin) and close < finalOrigin
+                swingPrice = array.get(rSwingHigh, i)
+                swingBar   = array.get(rSwingBar, i)
+                dotY = swingPrice + atrOffset
+                dot  = line.new(swingBar, dotY, swingBar, dotY, xloc.bar_index, extend.none, bearColor, line.style_solid, dotWidth)
+                array.push(protHighPrice, swingPrice)
+                array.push(protHighBar, swingBar)
+                array.push(protHighDot, dot)
+                array.remove(rTop, i)
+                array.remove(rBot, i)
+                array.remove(rOrigin, i)
+                array.remove(rSwingHigh, i)
+                array.remove(rSwingBar, i)
+                array.remove(rStartBar, i)
 
-// ---- new pivot high candidate ----
-if not na(ph)
-    pivotBar = bar_index - swingLen
-    if isInsideFVG(ph, pivotBar)
-        origin = findCisdOrigin(swingLen, false)
-        array.push(pendHighPrice, ph)
-        array.push(pendHighBar, pivotBar)
-        array.push(pendHighOrigin, origin)
-
-// ---- evaluate pending lows: CISD confirm or invalidate ----
-if array.size(pendLowPrice) > 0
-    for i = array.size(pendLowPrice) - 1 to 0
-        price  = array.get(pendLowPrice, i)
-        pbar   = array.get(pendLowBar, i)
-        origin = array.get(pendLowOrigin, i)
-        if low < price
-            array.remove(pendLowPrice, i)
-            array.remove(pendLowBar, i)
-            array.remove(pendLowOrigin, i)
-        else if close > origin
-            dotY = price - atrOffset
-            dot = line.new(pbar, dotY, pbar, dotY, xloc.bar_index, extend.none, bullColor, line.style_solid, dotWidth)
-            array.push(protLowPrice, price)
-            array.push(protLowBar, pbar)
-            array.push(protLowDot, dot)
-            array.remove(pendLowPrice, i)
-            array.remove(pendLowBar, i)
-            array.remove(pendLowOrigin, i)
-
-// ---- evaluate pending highs: CISD confirm or invalidate ----
-if array.size(pendHighPrice) > 0
-    for i = array.size(pendHighPrice) - 1 to 0
-        price  = array.get(pendHighPrice, i)
-        pbar   = array.get(pendHighBar, i)
-        origin = array.get(pendHighOrigin, i)
-        if high > price
-            array.remove(pendHighPrice, i)
-            array.remove(pendHighBar, i)
-            array.remove(pendHighOrigin, i)
-        else if close < origin
-            dotY = price + atrOffset
-            dot = line.new(pbar, dotY, pbar, dotY, xloc.bar_index, extend.none, bearColor, line.style_solid, dotWidth)
-            array.push(protHighPrice, price)
-            array.push(protHighBar, pbar)
-            array.push(protHighDot, dot)
-            array.remove(pendHighPrice, i)
-            array.remove(pendHighBar, i)
-            array.remove(pendHighOrigin, i)
-
-// ---- de-protect on wick break ----
+// ---------------- de-protect on wick break ----------------
 if array.size(protLowPrice) > 0
     for i = array.size(protLowPrice) - 1 to 0
         if low < array.get(protLowPrice, i)
