@@ -30,6 +30,9 @@ atrOffset = ta.atr(14) * dotOffsetMult
 bullFVG = low > high[2]
 bearFVG = high < low[2]
 
+// DEBUG: highlight every bar where a new FVG forms
+bgcolor(bullFVG ? color.new(color.yellow, 60) : bearFVG ? color.new(color.fuchsia, 60) : na)
+
 // ---------------- Bullish FVG tracking -> Protected Swing Low ----------------
 var float[] bTop       = array.new_float()
 var float[] bBot       = array.new_float()
