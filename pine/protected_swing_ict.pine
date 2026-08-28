@@ -9,8 +9,8 @@ indicator("Protected Swing (ICT)", overlay = true, max_lines_count = 500, max_bo
 // touched the zone (CISD) -> the lowest low touched during that
 // pullback becomes a Protected Swing Low.
 // Mirrored for a bearish FVG -> Protected Swing High.
-// A protected point is de-protected the moment price wicks
-// through it again.
+// A protected point is de-protected the moment price CLOSES
+// through it again (a wick alone does not invalidate it).
 //
 // FVGs stay valid indefinitely until fully violated (closed
 // through) -- no timeout.
@@ -29,9 +29,6 @@ atrOffset = ta.atr(14) * dotOffsetMult
 // ---------------- FVG formation ----------------
 bullFVG = low > high[2]
 bearFVG = high < low[2]
-
-// DEBUG: highlight every bar where a new FVG forms
-bgcolor(bullFVG ? color.new(color.yellow, 60) : bearFVG ? color.new(color.fuchsia, 60) : na)
 
 // ---------------- Bullish FVG tracking -> Protected Swing Low ----------------
 var float[] bTop       = array.new_float()
@@ -106,12 +103,12 @@ var int[]   rSwingBar   = array.new_int()
 var box[]   rBox        = array.new_box()
 
 if bearFVG
-    array.push(rTop, high[2])
-    array.push(rBot, low)
+    array.push(rTop, low[2])
+    array.push(rBot, high)
     array.push(rOrigin, na)
     array.push(rSwingHigh, na)
     array.push(rSwingBar, na)
-    newBox = showFvgBoxes ? box.new(bar_index - 2, high[2], bar_index, low, border_color = fvgBoxBearColor, bgcolor = fvgBoxBearColor, extend = extend.none) : na
+    newBox = showFvgBoxes ? box.new(bar_index - 2, low[2], bar_index, high, border_color = fvgBoxBearColor, bgcolor = fvgBoxBearColor, extend = extend.none) : na
     array.push(rBox, newBox)
 
 var float[] protHighPrice = array.new_float()
@@ -161,10 +158,10 @@ if array.size(rTop) > 0
                     array.remove(rSwingBar, i)
                     array.remove(rBox, i)
 
-// ---------------- de-protect on wick break ----------------
+// ---------------- de-protect on close break ----------------
 if array.size(protLowPrice) > 0
     for i = array.size(protLowPrice) - 1 to 0
-        if low < array.get(protLowPrice, i)
+        if close < array.get(protLowPrice, i)
             line.delete(array.get(protLowDot, i))
             array.remove(protLowPrice, i)
             array.remove(protLowBar, i)
@@ -172,7 +169,7 @@ if array.size(protLowPrice) > 0
 
 if array.size(protHighPrice) > 0
     for i = array.size(protHighPrice) - 1 to 0
-        if high > array.get(protHighPrice, i)
+        if close > array.get(protHighPrice, i)
             line.delete(array.get(protHighDot, i))
             array.remove(protHighPrice, i)
             array.remove(protHighBar, i)
