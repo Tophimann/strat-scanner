@@ -1,5 +1,5 @@
 //@version=6
-indicator("Protected Swing (ICT)", overlay = true, max_lines_count = 500, max_boxes_count = 500)
+indicator("Protected Swing (ICT)", overlay = true, max_labels_count = 500, max_boxes_count = 500)
 
 // ============================================================
 // Protected Swing (ICT)
@@ -18,12 +18,13 @@ indicator("Protected Swing (ICT)", overlay = true, max_lines_count = 500, max_bo
 
 bullColor     = input.color(color.new(color.lime, 0), "Protected Swing Low Color")
 bearColor     = input.color(color.new(color.red, 0), "Protected Swing High Color")
-dotWidth      = input.int(1, "Dot Width (px)", minval = 1, maxval = 4)
+dotSizeInput  = input.string("Tiny", "Dot Size", options = ["Tiny", "Small", "Normal"])
 dotOffsetMult = input.float(0.1, "Dot Distance from Swing (ATR mult.)", minval = 0.0, step = 0.05)
 showFvgBoxes  = input.bool(true, "Show Detected FVG Zones")
 fvgBoxBullColor = input.color(color.new(color.lime, 85), "Bullish FVG Zone Color")
 fvgBoxBearColor = input.color(color.new(color.red, 85), "Bearish FVG Zone Color")
 
+dotSize   = dotSizeInput == "Tiny" ? size.tiny : dotSizeInput == "Small" ? size.small : size.normal
 atrOffset = ta.atr(14) * dotOffsetMult
 
 // ---------------- FVG formation ----------------
@@ -49,7 +50,7 @@ if bullFVG
 
 var float[] protLowPrice = array.new_float()
 var int[]   protLowBar   = array.new_int()
-var line[]  protLowDot   = array.new_line()
+var label[] protLowDot   = array.new_label()
 
 if array.size(bTop) > 0
     for i = array.size(bTop) - 1 to 0
@@ -82,7 +83,7 @@ if array.size(bTop) > 0
                     swingPrice = array.get(bSwingLow, i)
                     swingBar   = array.get(bSwingBar, i)
                     dotY = swingPrice - atrOffset
-                    dot  = line.new(swingBar, dotY, swingBar, dotY, xloc.bar_index, extend.none, bullColor, line.style_solid, dotWidth)
+                    dot  = label.new(swingBar, dotY, "", xloc.bar_index, yloc.price, bullColor, label.style_circle, bullColor, size = dotSize)
                     array.push(protLowPrice, swingPrice)
                     array.push(protLowBar, swingBar)
                     array.push(protLowDot, dot)
@@ -113,7 +114,7 @@ if bearFVG
 
 var float[] protHighPrice = array.new_float()
 var int[]   protHighBar   = array.new_int()
-var line[]  protHighDot   = array.new_line()
+var label[] protHighDot   = array.new_label()
 
 if array.size(rTop) > 0
     for i = array.size(rTop) - 1 to 0
@@ -146,7 +147,7 @@ if array.size(rTop) > 0
                     swingPrice = array.get(rSwingHigh, i)
                     swingBar   = array.get(rSwingBar, i)
                     dotY = swingPrice + atrOffset
-                    dot  = line.new(swingBar, dotY, swingBar, dotY, xloc.bar_index, extend.none, bearColor, line.style_solid, dotWidth)
+                    dot  = label.new(swingBar, dotY, "", xloc.bar_index, yloc.price, bearColor, label.style_circle, bearColor, size = dotSize)
                     array.push(protHighPrice, swingPrice)
                     array.push(protHighBar, swingBar)
                     array.push(protHighDot, dot)
@@ -162,7 +163,7 @@ if array.size(rTop) > 0
 if array.size(protLowPrice) > 0
     for i = array.size(protLowPrice) - 1 to 0
         if close < array.get(protLowPrice, i)
-            line.delete(array.get(protLowDot, i))
+            label.delete(array.get(protLowDot, i))
             array.remove(protLowPrice, i)
             array.remove(protLowBar, i)
             array.remove(protLowDot, i)
@@ -170,7 +171,7 @@ if array.size(protLowPrice) > 0
 if array.size(protHighPrice) > 0
     for i = array.size(protHighPrice) - 1 to 0
         if close > array.get(protHighPrice, i)
-            line.delete(array.get(protHighDot, i))
+            label.delete(array.get(protHighDot, i))
             array.remove(protHighPrice, i)
             array.remove(protHighBar, i)
             array.remove(protHighDot, i)
